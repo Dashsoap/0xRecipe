@@ -32,12 +32,17 @@
 - v2 scoped 包 `@x402/*`(~2.16.0);header `PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`/`PAYMENT-RESPONSE`(**不是** v1 的 `X-PAYMENT`)
 - `@injectivelabs/x402` alpha(0.0.1,源码 404):内置 1439 网络配置 + EIP-3009 签名/验签 helper(version "2")→ **复用它的签名原语**,facilitator 角色已大幅缩小(见 §1.5)
 
-### 模型来源 = 统一 OpenAI 兼容网关(内部),配方可选任意模型
-- **模型来自我方既有的统一 LLM 网关(OpenAI 兼容)**:后端用一个 `base_url` + 一个 key 调用,网关后面挂任意模型(gpt-5.5 / claude-sonnet-4-6 / gemini / deepseek / qwen…),网关自带 quota 计费。**后端不直接接 OpenAI/Anthropic 官方 SDK。**
-- **配方(recipe)= 任意 N 个网关模型做 panel + 1 个做 judge**,模型 ID 必须在网关上存在 → 「Fusion 配方」真正可扩展,创作者按 lineup 自主定价。
-- **demo 配方**:LegalReviewer 用 ≤3 个 panel(如 gpt-5.5 + claude-sonnet-4-6 + 1 个第三方)+ gpt-5.5 judge;一镜到底为控延迟/成本,panel ≤3。
-- ⚠️ **结构化输出是否透传**:judge 的 `response_format json_schema` + `strict:true` 能否硬保证,取决于网关是否把该参数透传上游 → Day 1/2 **经网关实测**;不透传则降级「稳健 JSON 解析 + 一次重试」(R6)。流式 SSE 同理确认透传。
-- ⚠️ **UI/pitch/README 不得出现网关产品名**(CLAUDE.md 母规则:内部技术栈不进用户可见层),对外只说「统一多模型接入」。
+### 模型来源 = 统一 OpenAI 兼容网关(已实测),配方 = 模型 × 渠道 × 价格档
+- **网关已验证**:base `https://537-ai.net/v1`(OpenAI 兼容),一个 `base_url` + 一个 key 调用,后端**不直接接官方 SDK**。实测(2026-06-25):
+  - ✅ key 有效;✅ 推理通;✅ **`json_schema` strict 透传**(gpt-5.5 返回严格符合 schema 的 JSON → judge JSON 硬保证);✅ **streaming SSE 透传**(标准 `chat.completion.chunk`)
+- **渠道(channel)是一等概念**:同一模型可由多渠道供给、**不同价格/质量**(new-api 式)。已验证两条渠道(同网关、不同 key):
+  - `标准渠道`(`LLM_GATEWAY_KEY`):72 模型,gpt/claude/gemini 混合源
+  - `纯血渠道`(`LLM_GATEWAY_KEY_PURE`):9 个 claude,官方源(质量高、价更贵)
+  - key 在 `~/0xRecipe/.env`(gitignored,**绝不进 repo / 不下发 agent**)
+- **配方(recipe)= 任意 N 个 (模型,渠道) 做 panel + 1 个做 judge**,创作者按所选渠道成本自主定价(D6:价 ≥ 2× 上游成本,**按渠道算**)。把「同模型多源不同价」做成配方市场核心卖点。
+- **demo 配方**:LegalReviewer ≤3 panel(如 gpt-5.5 标准 + claude-opus-4-8 纯血 + 1 个)+ gpt-5.5 judge;一镜到底控延迟/成本,panel ≤3。
+- ⚠️ **用户可见层只说质量档**(如「官方源 / 标准源」),**绝不出现**网关产品名、「纯血/逆向」这类内部词(CLAUDE.md 母规则)。
+- ⚠️ 残留待验:judge 若改用 Claude-via-网关,需另测 Claude 的 json_schema 透传(当前 judge=gpt-5.5 已验,不阻塞)。
 
 ---
 
@@ -169,8 +174,9 @@ FUSION_SPLITTER_ADDRESS = <Day 2 部署后填>
 PLATFORM_ADDR           = <平台收款地址>
 HARDCODED_CREATOR_ADDR  = <创作者测试钱包>
 BACKEND_PRIVATE_KEY     = <后端热钱包:充 INJ;deposit relayer + charge() onlyBackend 签名>
-LLM_GATEWAY_URL         = <统一 OpenAI 兼容网关 base_url>
-LLM_GATEWAY_KEY         = <网关 key(平台内部密钥,绝不下发给 agent)>
+LLM_GATEWAY_URL         = https://537-ai.net/v1   # OpenAI 兼容,已实测
+LLM_GATEWAY_KEY         = <标准渠道 key,72 模型;在 .env,绝不进 repo / 不下发 agent>
+LLM_GATEWAY_KEY_PURE    = <纯血 Claude 渠道 key,9 个 claude 官方源;在 .env>
 RECIPE_PRICE_USDC       = <Day 2 按 D6 实算后定>
 VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 ```
