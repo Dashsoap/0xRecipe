@@ -1,0 +1,29 @@
+{
+  "name": "@0xrecipe/x402",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "On-chain signing primitives for 0xRecipe: EIP-3009 ReceiveWithAuthorization (gasless prefund) + EIP-712 per-call payment vouchers, on Injective EVM testnet.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@0xrecipe/shared": "workspace:*",
+    "viem": "^2"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
