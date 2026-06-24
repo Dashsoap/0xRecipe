@@ -32,13 +32,12 @@
 - v2 scoped 包 `@x402/*`(~2.16.0);header `PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`/`PAYMENT-RESPONSE`(**不是** v1 的 `X-PAYMENT`)
 - `@injectivelabs/x402` alpha(0.0.1,源码 404):内置 1439 网络配置 + EIP-3009 签名/验签 helper(version "2")→ **复用它的签名原语**,facilitator 角色已大幅缩小(见 §1.5)
 
-### 模型(全部真实可用)
-| 角色 | 模型 | 价格(in/out 每百万) | 备注 |
-|---|---|---|---|
-| Panel A | `gpt-5.5` | $5 / $30 | strict json_schema 约束解码 |
-| Panel B | `claude-sonnet-4-6` | $3 / $15 | 不用 opus 当 panel(判官做重活,panel 省成本保多样性) |
-| Judge | `gpt-5.5` | $5 / $30 | strict `json_schema` 硬保证 schema |
-- Claude 也原生支持 `output_config.format` json_schema(GA)→ R6 判官 JSON 两家都能语法约束根治,不用 prefill(4.6+ prefill 会 400)、不用 few-shot
+### 模型来源 = 统一 OpenAI 兼容网关(内部),配方可选任意模型
+- **模型来自我方既有的统一 LLM 网关(OpenAI 兼容)**:后端用一个 `base_url` + 一个 key 调用,网关后面挂任意模型(gpt-5.5 / claude-sonnet-4-6 / gemini / deepseek / qwen…),网关自带 quota 计费。**后端不直接接 OpenAI/Anthropic 官方 SDK。**
+- **配方(recipe)= 任意 N 个网关模型做 panel + 1 个做 judge**,模型 ID 必须在网关上存在 → 「Fusion 配方」真正可扩展,创作者按 lineup 自主定价。
+- **demo 配方**:LegalReviewer 用 ≤3 个 panel(如 gpt-5.5 + claude-sonnet-4-6 + 1 个第三方)+ gpt-5.5 judge;一镜到底为控延迟/成本,panel ≤3。
+- ⚠️ **结构化输出是否透传**:judge 的 `response_format json_schema` + `strict:true` 能否硬保证,取决于网关是否把该参数透传上游 → Day 1/2 **经网关实测**;不透传则降级「稳健 JSON 解析 + 一次重试」(R6)。流式 SSE 同理确认透传。
+- ⚠️ **UI/pitch/README 不得出现网关产品名**(CLAUDE.md 母规则:内部技术栈不进用户可见层),对外只说「统一多模型接入」。
 
 ---
 
@@ -63,6 +62,8 @@
 ## 1.5 计费架构:预付 escrow + 每调一张 voucher(x402 batch-settlement 模式)
 
 **核心**:钱包即账户(免注册);agent 一次性把 USDC 存进链上 escrow;每次调用带一张签名凭证;后端扣的是 escrow 里**已锁定的钱**,所以**平台永不垫付不可回收的上游成本**,失败不扣费。
+
+> 注意分两层:**下游(链上)= agent 付 0xRecipe**(本节);**上游(链下)= 0xRecipe 付模型** 走统一 OpenAI 兼容网关(见 §0)。escrow 余额是 agent 的预付款;网关 quota 是平台的上游成本。两者独立。
 
 ### 合约
 - **`AgentEscrow.sol`(新,~120-150 行)**
@@ -133,10 +134,11 @@
 - [ ] 后端按 §1.5 时序:验 voucher → solvency(读链上余额)→ Fusion → 成功才 `charge()`;失败诚实错误态(A.4)
 - [ ] **预算墙 = escrow 余额**:deposit 只够 2 次,第 3 次 `balanceOf < price` → 403
 - [ ] **1500 字假租约 + 故意埋矛盾条款**,跑 5 次确认 panel+judge 稳定标出 `contradictions` → 冻结为夹具
-- [ ] **成本核算(D6)**:实算一次调用 token×单价;若 $0.05 < 2× 上游成本 → 抬硬编码 demo 价(开 prompt caching 砍 panel 输入 ~90%)
+- [ ] **成本核算(D6)**:按**网关 quota 计费**实算一次调用(N panel + judge)的上游成本;模型越多成本越高 → 每个配方按 lineup 定价,demo 价若 < 2× 上游成本则抬价
 - [ ] 前端三栏 + SSE 实时更新(预算条随 `balanceOf` 下降、创作者收入 toast)
 
-**判官**:gpt-5.5 `response_format: json_schema` + `strict:true`;`FusionResult = { consensus, contradictions, partial_coverage, unique_insights, blind_spots, synthesized_answer }`
+**Fusion 流程**:并行调用配方指定的 N 个 panel 模型(全经统一网关,OpenAI 兼容)→ 组 judge prompt → judge(默认 gpt-5.5)输出 `FusionResult = { consensus, contradictions, partial_coverage, unique_insights, blind_spots, synthesized_answer }`。
+**判官 JSON**:优先 `response_format: json_schema` + `strict:true`(网关透传时);Day 2 实测若网关不透传 → 稳健解析 + 一次重试兜底。
 
 ### Stage 3 — Day 3:Mastra Agent(叠加在已通管线上)
 **Goal**:agent 完整多步 loop;三栏实时更新;第 3 次撞预算墙(余额不足)且优雅处理。
@@ -167,8 +169,8 @@ FUSION_SPLITTER_ADDRESS = <Day 2 部署后填>
 PLATFORM_ADDR           = <平台收款地址>
 HARDCODED_CREATOR_ADDR  = <创作者测试钱包>
 BACKEND_PRIVATE_KEY     = <后端热钱包:充 INJ;deposit relayer + charge() onlyBackend 签名>
-OPENAI_API_KEY          = <gpt-5.5>
-ANTHROPIC_API_KEY       = <claude-sonnet-4-6>
+LLM_GATEWAY_URL         = <统一 OpenAI 兼容网关 base_url>
+LLM_GATEWAY_KEY         = <网关 key(平台内部密钥,绝不下发给 agent)>
 RECIPE_PRICE_USDC       = <Day 2 按 D6 实算后定>
 VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 ```
@@ -195,12 +197,13 @@ VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 | **R3** | escrow 托管 agent 资金,`onlyBackend` key 泄漏影响面=总托管额 | 安全 | 每笔 Charged 事件可审计;固定单价;V1 voucher 上链 |
 | **R4** | 仅凭地址扣费可被冒充 | 安全 | C10:每调 voucher 验签;脚本 demo 走捷径要标注 |
 | **R5** | Day 3 超载 | 进度 | 联调提前 Day 2;15:00 切纯 TS 兜底 |
-| **R6** | 判官 JSON 不稳 | Day 2 卡 | gpt-5.5 strict json_schema(Claude 也支持 output_config.format) |
+| **R6** | 判官 JSON 不稳 / 网关不透传 json_schema | Day 2 卡 | 经网关实测 strict json_schema 透传;不透传则稳健解析+重试 |
 | **R7** | demo 矛盾条款不稳定触发 | 叙事塌 | Day 2 埋矛盾 + 跑 5 次冻结夹具 |
 | **R8** | $0.05 违反 D6 | 商业 slide | Day 2 实算抬价 + prompt caching |
 | **R9** | OpenAI/Anthropic 转售 TOS | 合规 | MVP 接受,pitch 路线图提 |
 | **R10** | 公共 RPC 限频 | 部署慢 | 备 thirdweb/PublicNode dev RPC |
 | **R11** | "x402 移出每调链上结算"被评委质疑不算 x402 | 叙事 | 明确定位为 x402 batch-settlement(capital-backed escrow)模式 + 存款是真 EIP-3009 |
+| **R12** | 上游统一网关:json_schema/streaming 透传、限频、稳定性、转售 TOS(叠加 R9) | Fusion 卡/合规 | Day 1 经网关验透传;网关挂=Fusion 停 → demo 前热身;UI/pitch 不提网关产品名 |
 
 > 工程稳健:链参数收敛到一个 config 模块。**demo / pitch / README 100% Injective,不提其它链。**
 
