@@ -1,0 +1,11 @@
+# Foundry
+out/
+cache/
+broadcast/
+
+# Dependencies are vendored as git submodules (see .gitmodules), e.g. lib/forge-std.
+# Run `git submodule update --init --recursive` (or `forge install`) after cloning.
+
+# Env / secrets — never commit
+.env
+.env.*
