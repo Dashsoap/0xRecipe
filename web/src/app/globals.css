@@ -2,55 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Ethereal-Glass base styles. Dark-first: the shadcn-compatible CSS variables
+  below are mapped onto the layered "ink" palette so legacy primitives keep
+  working while the whole surface reads dark + neon.
+*/
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    /* Layered ink surfaces (HSL channels for the shadcn alias vars). */
+    --background: 240 22% 3%; /* ~#050507 page floor */
+    --foreground: 210 20% 96%; /* near-white text */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card: 230 22% 5%; /* ~#0a0b10 panel */
+    --card-foreground: 210 20% 96%;
 
-    --primary: 222 47% 11%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary == cyan accent (used by Progress fill, default Button bg). */
+    --primary: 187 84% 53%; /* #22D3EE */
+    --primary-foreground: 240 22% 4%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 228 17% 9%; /* raised-ish surface */
+    --secondary-foreground: 210 20% 92%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 228 14% 12%;
+    --muted-foreground: 220 12% 62%;
 
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 258 90% 66%; /* #8B5CF6 violet */
+    --accent-foreground: 210 20% 96%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 222 47% 11%;
+    --border: 220 16% 20%;
+    --input: 220 16% 20%;
+    --ring: 187 84% 53%; /* cyan focus ring */
 
-    --radius: 0.625rem;
+    --radius: 0.75rem;
   }
 
+  /* Single dark theme — keep .dark in sync so darkMode="class" never flips
+     the surface back to light. */
   .dark {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 98%;
-
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222 47% 11%;
-
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 213 27% 84%;
+    --background: 240 22% 3%;
+    --foreground: 210 20% 96%;
+    --card: 230 22% 5%;
+    --card-foreground: 210 20% 96%;
+    --primary: 187 84% 53%;
+    --primary-foreground: 240 22% 4%;
+    --secondary: 228 17% 9%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 228 14% 12%;
+    --muted-foreground: 220 12% 62%;
+    --accent: 258 90% 66%;
+    --accent-foreground: 210 20% 96%;
+    --border: 220 16% 20%;
+    --input: 220 16% 20%;
+    --ring: 187 84% 53%;
   }
 }
 
@@ -58,9 +61,86 @@
   * {
     border-color: hsl(var(--border));
   }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
-    background-color: hsl(var(--background));
+    background-color: #050507;
     color: hsl(var(--foreground));
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    /* Avoid horizontal jump from the blurred mesh orbs bleeding past edges. */
+    overflow-x: hidden;
+  }
+
+  /* Selection — soft cyan wash. */
+  ::selection {
+    background-color: rgba(34, 211, 238, 0.22);
+    color: #ffffff;
+  }
+
+  /* Custom thin scrollbar that fits the dark surface. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(34, 211, 238, 0.35);
+  }
+}
+
+/*
+  Reusable surface helpers. Components prefer Tailwind utilities, but these
+  capture the two background layers (mesh orbs + grain) so MeshBackground /
+  GrainOverlay stay declarative and easy to tweak in one place.
+*/
+@layer components {
+  /* Fixed radial mesh — cyan top-left + violet bottom-right, heavily blurred. */
+  .mesh-bg {
+    background-image:
+      radial-gradient(
+        42rem 42rem at 12% 8%,
+        rgba(34, 211, 238, 0.16),
+        transparent 60%
+      ),
+      radial-gradient(
+        40rem 40rem at 88% 92%,
+        rgba(139, 92, 246, 0.16),
+        transparent 60%
+      );
+  }
+
+  /* Grain noise as a data-uri tile — applied on GrainOverlay. */
+  .grain-overlay {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+  }
+}
+
+@layer utilities {
+  /* Respect reduced-motion: kill the looping ambient animations. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-beam,
+    .animate-float,
+    .animate-float-slow,
+    .animate-shimmer,
+    .animate-pulse-glow {
+      animation: none !important;
+    }
   }
 }

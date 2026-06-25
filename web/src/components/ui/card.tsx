@@ -2,18 +2,30 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Card — Ethereal-Glass Double-Bezel. Same export API as before (Card,
+ * CardHeader, CardTitle, CardDescription, CardContent, CardFooter) so existing
+ * call sites keep working; only the look changes.
+ *
+ * The outer <div> is the bezel shell (translucent + hairline ring + 1.5 pad);
+ * an inner core carries the dark surface, inset highlight and content radius.
+ */
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => (
   <div
     ref={ref}
     className={cn(
-      "rounded-lg border bg-card text-card-foreground shadow-sm",
+      "rounded-squircle bg-white/[0.03] p-1.5 ring-1 ring-white/10 transition-shadow duration-500 ease-spring hover:shadow-glow-cyan",
       className,
     )}
     {...props}
-  />
+  >
+    <div className="h-full rounded-squircle-inner bg-ink-panel text-card-foreground shadow-inset-hi">
+      {children}
+    </div>
+  </div>
 ));
 Card.displayName = "Card";
 
@@ -36,7 +48,7 @@ const CardTitle = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "text-lg font-semibold leading-none tracking-tight",
+      "text-lg font-medium leading-none tracking-tight text-white",
       className,
     )}
     {...props}
