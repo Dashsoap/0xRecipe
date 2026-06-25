@@ -65,6 +65,8 @@ const DEMO_TX_B =
   "0x0000000000000000000000000000000000000000000000000000000000DEM0B2" as `0x${string}`;
 
 const DEMO_RECIPE_LABEL = "示例配方";
+// Neutral demo id — kept out of the UI, mirrors the 0xDEMO placeholder style.
+const DEMO_RECIPE_ID = "demo-recipe";
 
 function buildDemoState(): EventStreamState {
   const now = Date.now();
@@ -76,7 +78,7 @@ function buildDemoState(): EventStreamState {
       creator: DEMO_CREATOR_ADDR,
       amount: "50000", // demo, 6-decimal USDC base units
       txHash: DEMO_TX_B,
-      recipeId: "legal-reviewer-v1",
+      recipeId: DEMO_RECIPE_ID,
       ts: now - 12_000,
     },
     {
@@ -85,7 +87,7 @@ function buildDemoState(): EventStreamState {
       creator: DEMO_CREATOR_ADDR,
       amount: "50000", // demo
       txHash: DEMO_TX_A,
-      recipeId: "legal-reviewer-v1",
+      recipeId: DEMO_RECIPE_ID,
       ts: now - 48_000,
     },
   ];
