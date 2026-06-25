@@ -24,10 +24,17 @@ for (const url of RPCS) {
     const nonceLatest = await c.getTransactionCount({ address: deployer, blockTag: "latest" });
     const noncePending = await c.getTransactionCount({ address: deployer, blockTag: "pending" });
     console.log(`RPC ${url}\n  chainId=${cid} nonce(latest)=${nonceLatest} nonce(pending)=${noncePending}`);
-    for (let n = 0; n < Math.max(nonceLatest, noncePending) + 1; n++) {
-      const addr = getContractAddress({ from: deployer, nonce: BigInt(n) });
-      let len = 0;
-      try { const code = await c.getCode({ address: addr }); len = code ? (code.length - 2) / 2 : 0; } catch {}
+    // Parallelize the per-nonce getCode probes (serial loop is slow + rate-limit prone).
+    const maxNonce = Math.max(nonceLatest, noncePending);
+    const rows = await Promise.all(
+      Array.from({ length: maxNonce + 1 }, async (_, n) => {
+        const addr = getContractAddress({ from: deployer, nonce: BigInt(n) });
+        let len = 0;
+        try { const code = await c.getCode({ address: addr }); len = code ? (code.length - 2) / 2 : 0; } catch {}
+        return { n, addr, len };
+      }),
+    );
+    for (const { n, addr, len } of rows) {
       if (len > 0) console.log(`  nonce ${n} -> ${addr}  codeLen=${len}  <-- DEPLOYED`);
       else console.log(`  nonce ${n} -> ${addr}  (no code)`);
     }

@@ -5,7 +5,7 @@
 // Reads MNEMONIC from .env (never printed). Run: cd backend && node --env-file=../.env scripts/spike-deposit-charge.mjs
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { createPublicClient, createWalletClient, http, defineChain, formatUnits, parseUnits } from "viem";
+import { createPublicClient, createWalletClient, http, defineChain, formatUnits, parseUnits, parseSignature } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 
 const M = process.env.MNEMONIC;
@@ -60,8 +60,9 @@ const sig = await agent.signTypedData({
   primaryType: "ReceiveWithAuthorization",
   message: { from: agent.address, to: ESCROW, value: DEPOSIT, validAfter, validBefore, nonce },
 });
-const r = `0x${sig.slice(2, 66)}`, s = `0x${sig.slice(66, 130)}`;
-let v = parseInt(sig.slice(130, 132), 16); if (v < 27) v += 27;
+// parseSignature splits + normalizes v (handles 0/1 -> 27/28) — safer than manual slicing.
+const { r, s, v: vRaw, yParity } = parseSignature(sig);
+const v = vRaw !== undefined ? Number(vRaw) : 27 + yParity;
 console.log("\n[1] agent signed ReceiveWithAuthorization (gasless). relaying depositFor...");
 
 // 2) backend relays depositFor
