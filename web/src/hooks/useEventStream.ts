@@ -121,8 +121,8 @@ function buildDemoState(): EventStreamState {
     },
     creator: {
       address: DEMO_CREATOR_ADDR,
-      totalEarned: "80000", // demo cumulative (80% of charged)
-      latestPayout: "40000", // demo latest split
+      totalEarned: "20000", // demo cumulative (creator's 20% of charged)
+      latestPayout: "10000", // demo latest split (creator's 20% of one charge)
     },
     settlements,
     latestResult: null,

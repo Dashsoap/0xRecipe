@@ -1,7 +1,7 @@
 // R1 on-chain spike: prove the whole settlement chain on Injective testnet.
 //  1. agent signs EIP-3009 ReceiveWithAuthorization (gasless)
 //  2. backend relays escrow.depositFor -> credits balances[agent] (the SIGNER)
-//  3. backend escrow.charge(agent, amount, creator) -> debit + 80/20 atomic split
+//  3. backend escrow.charge(agent, amount, creator) -> debit + 20/80 atomic split
 // Reads MNEMONIC from .env (never printed). Run: cd backend && node --env-file=../.env scripts/spike-deposit-charge.mjs
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -41,8 +41,8 @@ try { version = await pub.readContract({ address: USDC, abi: erc20, functionName
 console.log("escrow:", ESCROW, "\nsplitter:", SPLITTER, "\nagent:", agent.address, "\nUSDC version:", version, "\n");
 
 const DEPOSIT = parseUnits("10", 6); // 10 USDC
-const CHARGE = parseUnits("5", 6);   // 5 USDC -> creator 4 / platform 1
-const expCreator = (CHARGE * 800000n) / 1000000n;
+const CHARGE = parseUnits("5", 6);   // 5 USDC -> creator 1 / platform 4
+const expCreator = (CHARGE * 200000n) / 1000000n;
 const expPlatform = CHARGE - expCreator;
 
 const before = { agentU: await usdcBal(agent.address), creatorU: await usdcBal(CREATOR), platformU: await usdcBal(PLATFORM), escrowA: await escrowBal(agent.address) };
@@ -75,7 +75,7 @@ const credited = afterDep.escrowA - before.escrowA;
 console.log("    escrowBal[agent] %s -> %s (credited %s)  agentUSDC -> %s", fmt(before.escrowA), fmt(afterDep.escrowA), fmt(credited), fmt(afterDep.agentU));
 console.log("    R1 check (credited to SIGNER == deposit):", credited === DEPOSIT ? "PASS ✓" : "FAIL ✗");
 
-// 3) backend charge -> 80/20 split
+// 3) backend charge -> 20/80 split
 console.log("\n[2] backend charge(agent, 5 USDC, creator)...");
 const h2 = await beWallet.writeContract({ address: ESCROW, abi: escrowAbi, functionName: "charge", args: [agent.address, CHARGE, CREATOR] });
 console.log("    charge tx:", h2);

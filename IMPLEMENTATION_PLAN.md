@@ -76,7 +76,7 @@
   - `charge(address agent, uint256 amount, address creator)` **onlyBackend**:CEI — `require(balances[agent] >= amount)`;`balances[agent] -= amount`;`usdc.transfer(splitter, amount)`;`splitter.distribute(creator)`;emit Charged + AuditEvent。**一笔原子 tx**,后端付 INJ gas。
   - `withdraw(uint256 amount)`:`balances[msg.sender] -= amount`;转回 agent。随时取回未花余额。
   - `balanceOf(address) view`;ReentrancyGuard + CEI;onlyBackend = 部署时授权的后端热钱包。
-- **`FusionPayoutSplitter.sol`(不变)**:`distribute(creator)` 读自身余额按 80/20(`800000/200000` over `1e6`,floor,0 余额不 revert,ReentrancyGuard),由 `AgentEscrow.charge()` 调用。
+- **`FusionPayoutSplitter.sol`**:`distribute(creator)` 读自身余额按 20/80 拆(creator `200000` / platform `800000` over `1e6`,即 `CREATOR_BPS=200000`、`platformCut = bal - creatorCut` 自动为 80%,floor,0 余额不 revert,ReentrancyGuard),由 `AgentEscrow.charge()` 调用。**分账在 gross(agent 付的全价)上拆:创作者 20% 返佣、不承担成本;平台 80%,从这 80% 里垫付上游算力/API 成本。链上不放成本,只按 gross 拆 20/80。**
 
 ### 每次调用的凭证(voucher,热路径)
 - agent 签 EIP-712 voucher `{agent, recipeId, maxPrice, nonce, expiry}`,放进 `PAYMENT-SIGNATURE` header。
@@ -96,14 +96,14 @@
 4. 跑 Fusion:并行 gpt-5.5 + claude-sonnet-4-6 → gpt-5.5 judge(strict json)
    ← 真金白银花在这,但 step 2 已确认链上锁定余额存在
 5a. 失败:释放 hold,不调 charge();agent 保留 100% 余额;系统级错误气泡(A.4 绝不伪造 LLM 输出)
-5b. 成功:escrow.charge(agent, price, creator) — 一笔原子 tx:扣费 + 80/20 链上强制分账
+5b. 成功:escrow.charge(agent, price, creator) — 一笔原子 tx:扣费 + 20/80 链上强制分账(creator 20% / platform 80%)
 6. 返回:释放 hold;SSE 广播 settlement(agent/creator/amount/tx hash);返回 FusionResult + tx hash
 7. 取回(随时):escrow.withdraw(amount) 拿回未花余额
 ```
 
 ### 关键澄清(诚实定位,防被评委戳穿)
 - **这把 x402 移出了"每调一笔链上结算"**:热路径是 off-chain voucher + 延迟到 escrow 的批量结算 —— 这正是 x402 **batch-settlement / capital-backed escrow** 模式(是 x402 的正式 scheme,不是脱离 x402)。存款仍是一次真实的 EIP-3009 gasless 授权。pitch 话术统一为「预存一次 + 按调用扣费 + 链上强制分账」,**不要**说「每次调用一笔链上 x402 结算」。
-- **80/20 分账时点**:demo 用**每调用即分**(`charge()` 内一笔原子完成,创作者收入 toast 每调一跳,视觉最好);高频场景的批量分账(在 withdraw/结算时一次拆,省 gas)留 V1。
+- **20/80 分账时点**:demo 用**每调用即分**(`charge()` 内一笔原子完成,创作者 20% 返佣 toast 每调一跳,视觉最好);高频场景的批量分账(在 withdraw/结算时一次拆,省 gas)留 V1。
 - **「预算墙」demo**:存刚好够 2 次的额度 → 第 3 次 `balanceOf < price` → 403。**escrow 余额即预算**(可省掉原 D14 的内存 budget Map;要策略上限再叠一个)。
 - **托管信任**:escrow 在 deposit~withdraw 间托管 agent 资金,`onlyBackend` key 泄漏的影响面 = 总托管额。缓解:每笔 `Charged` 事件链上可审计、固定单价、V1 把 voucher 上链(charge 校验 voucher 签名)做信任最小化。
 
@@ -126,15 +126,15 @@
 **Stream A(人类)**:环境 + `depositFor`/`receiveWithAuthorization` spike + deposit/withdraw 跑通
 **Stream B(子 agent)**:`AgentEscrow.sol` + `FusionPayoutSplitter.sol`(Solidity 0.8.28,evm cancun)
 - AgentEscrow:`depositFor` / `charge`(onlyBackend) / `withdraw` / `balanceOf`,接口见 §1.5;ReentrancyGuard + CEI
-- Splitter:`distribute(creator)` 80/20(不变);`AuditEvent` + `emitAudit`
+- Splitter:`distribute(creator)` 20/80(creator `CREATOR_BPS=200000` / platform `800000` over `1e6`);`AuditEvent` + `emitAudit`
 - Foundry 测试:存款记账到 from、charge 扣费+分账精度、0 余额不 revert、withdraw、重入防护、onlyBackend 鉴权
 - **Day 1 不部署**(spike 确认后 Day 2 部署)
 **Stream C(子 agent)**:Next.js 15 + shadcn + wagmi/viem(custom chain 1439);三栏空版型 + `useEventStream`(假数据)
 
 ### Stage 2 — Day 2:部署 + Fusion 引擎 + **curl 端到端** + 前端
-**Goal**:`curl` 跑通:deposit 一次 → 带 voucher 调用 → solvency check → 跑 Fusion → `charge()` 原子扣费+80/20 → 返回 `FusionResult`+tx hash;前端三栏 + SSE 通。
+**Goal**:`curl` 跑通:deposit 一次 → 带 voucher 调用 → solvency check → 跑 Fusion → `charge()` 原子扣费+20/80 → 返回 `FusionResult`+tx hash;前端三栏 + SSE 通。
 **Success Criteria**:
-- [ ] AgentEscrow + Splitter 部署到 1439,地址进 `.env`;手动测:deposit $0.10 → `charge($0.05, creator)` → creator $0.04 / platform $0.01 / escrow 余 $0.05
+- [ ] AgentEscrow + Splitter 部署到 1439,地址进 `.env`;手动测:deposit $0.10 → `charge($0.05, creator)` → creator $0.01(20%) / platform $0.04(80%) / escrow 余 $0.05
 - [ ] **共享类型 `FusionResult` 定稿**(C6),三方 import
 - [ ] 后端按 §1.5 时序:验 voucher → solvency(读链上余额)→ Fusion → 成功才 `charge()`;失败诚实错误态(A.4)
 - [ ] **预算墙 = escrow 余额**:deposit 只够 2 次,第 3 次 `balanceOf < price` → 403
@@ -158,7 +158,7 @@
 **Success Criteria**:
 - [ ] demo 连跑 3 次全成功;UI polish;全程录制机 localhost(iframe/SSE 提前 Day 2 验过)
 - [ ] 3 分钟一镜到底;0:20-0:50 改「展示 hard-coded recipe + 未来开放上架」
-- [ ] Pitch 10 页:第 7 页用 Day 2 实算成本;架构图/话术统一「预存一次 + 按调用扣费 + **链上强制原子分账**」,**不说**「每调一笔链上结算」
+- [ ] Pitch 10 页:第 7 页用 Day 2 实算成本 + gross 20/80 拆账叙事(平台主导运营、从 80% 里垫付上游算力/API 成本;创作者 20% 返佣、不担成本;平台净利 = 80%×价 − API 成本);架构图/话术统一「预存一次 + 按调用扣费 + **链上强制原子分账(creator 20% / platform 80%)**」,**不说**「每调一笔链上结算」
 - [ ] README:定位 + demo 链接 + local quickstart + limitations + V1 路线图(token 计量 / voucher 上链 / 多配方)
 
 ---

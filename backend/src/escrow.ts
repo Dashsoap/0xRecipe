@@ -160,7 +160,7 @@ export async function relayDeposit(params: RelayDepositParams): Promise<Hex> {
 
 /**
  * Charge an agent after a successful call: one atomic tx that deducts the
- * balance, transfers to the splitter, and distributes 80/20. Returns the tx
+ * balance, transfers to the splitter, and distributes 20/80. Returns the tx
  * hash. `onlyBackend` on-chain; signed by the backend hot wallet.
  */
 export async function charge(

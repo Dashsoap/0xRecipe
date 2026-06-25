@@ -250,7 +250,7 @@ function KeylessCard() {
   );
 }
 
-/** Atomic split card — carries an 80 / 20 split mini-diagram. */
+/** Atomic split card — carries a 20 / 80 creator/platform split mini-diagram. */
 function SplitCard() {
   return (
     <GlassPanel
@@ -269,19 +269,19 @@ function SplitCard() {
           一笔付款，原子分账
         </h3>
         <p className="text-sm leading-relaxed text-white/50">
-          每笔付款在合约里一步到账即分流，八成给创作者，两成留平台，全程可查。
+          每笔付款在合约里一步到账即分流：创作者拿两成调用返佣，平台留八成承担算力成本，全程可查。
         </p>
       </div>
 
-      {/* 80 / 20 split bar. */}
+      {/* 20 / 80 creator / platform split bar. */}
       <div className="mt-auto flex flex-col gap-1.5 pt-1">
         <div className="flex h-2 overflow-hidden rounded-full ring-1 ring-white/10">
-          <span aria-hidden className="bg-violet/60" style={{ width: "80%" }} />
           <span aria-hidden className="bg-white/15" style={{ width: "20%" }} />
+          <span aria-hidden className="bg-violet/60" style={{ width: "80%" }} />
         </div>
         <div className="flex justify-between font-mono text-[10px] tracking-tight text-white/35">
-          <span>创作者 80</span>
-          <span>平台 20</span>
+          <span>创作者 20</span>
+          <span>平台 80</span>
         </div>
       </div>
     </GlassPanel>

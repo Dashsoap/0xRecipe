@@ -6,7 +6,7 @@ An agent prepays USDC into an on-chain escrow once, then calls the Fusion
 endpoint with a signed per-call voucher. The backend verifies the voucher,
 checks the agent's on-chain balance, runs the recipe (a panel of models plus a
 judge through one OpenAI-compatible gateway), and — only on success — charges
-the escrow in a single atomic transaction that also splits the payout 80/20 to
+the escrow in a single atomic transaction that also splits the payout 20/80 to
 the recipe creator and the platform.
 
 ## Quickstart

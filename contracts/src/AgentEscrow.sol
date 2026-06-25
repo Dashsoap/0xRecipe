@@ -14,7 +14,7 @@ interface ISplitter {
 /// @notice Prepaid on-chain escrow for the 0xRecipe model market.
 ///         An agent deposits USDC once (gaslessly, via EIP-3009); each call is charged
 ///         against that locked balance, and the charge atomically forwards the fee to
-///         the splitter and triggers the 80/20 payout. Because funds are locked before
+///         the splitter and triggers the 20/80 payout. Because funds are locked before
 ///         any model call runs, the platform never fronts unrecoverable upstream cost,
 ///         and a failed call simply never charges.
 /// @dev See IMPLEMENTATION_PLAN §1.5. ReentrancyGuard + strict checks-effects-interactions
@@ -24,7 +24,7 @@ contract AgentEscrow is ReentrancyGuard {
     IERC20 public immutable usdc;
     /// @notice The backend hot wallet authorized to charge agents (onlyBackend).
     address public immutable backend;
-    /// @notice The payout splitter that performs the 80/20 distribution.
+    /// @notice The payout splitter that performs the 20/80 distribution.
     address public immutable splitter;
 
     /// @notice Prepaid, currently-unspent balance per agent address.
@@ -95,13 +95,13 @@ contract AgentEscrow is ReentrancyGuard {
         emit Deposited(from, value);
     }
 
-    /// @notice Charge an agent for one call and atomically split the fee 80/20.
+    /// @notice Charge an agent for one call and atomically split the fee 20/80.
     /// @dev onlyBackend. Strict CEI: balance check, balance debit (effect), then the
     ///      external transfer + distribute (interactions). The whole charge — debit,
-    ///      transfer to splitter, and 80/20 payout — settles in a single atomic tx.
+    ///      transfer to splitter, and 20/80 payout — settles in a single atomic tx.
     /// @param agent The agent being charged.
     /// @param amount The fee to charge (in USDC base units).
-    /// @param creator The creator receiving the 80% share.
+    /// @param creator The creator receiving the 20% share.
     function charge(address agent, uint256 amount, address creator) external onlyBackend nonReentrant {
         require(balances[agent] >= amount, "insufficient");
 

@@ -1,13 +1,13 @@
 # 0xRecipe Contracts
 
-On-chain settlement for the 0xRecipe model market on Injective EVM testnet (chainId 1439). An agent prepays USDC into escrow once; every model call is charged against that locked balance, and each charge atomically forwards the fee and splits it 80/20 between the creator and the platform in a single transaction.
+On-chain settlement for the 0xRecipe model market on Injective EVM testnet (chainId 1439). An agent prepays USDC into escrow once; every model call is charged against that locked balance, and each charge atomically forwards the fee and splits it 20/80 between the creator and the platform in a single transaction.
 
 ## Contracts
 
 | Contract | Responsibility |
 |---|---|
 | `src/AgentEscrow.sol` | Prepaid escrow. Agents deposit USDC gaslessly via EIP-3009 `receiveWithAuthorization` (credited to the signer, submitted by a relayer). The authorized backend charges per call; charging debits the balance and triggers the split atomically. Agents withdraw unspent balance anytime. |
-| `src/FusionPayoutSplitter.sol` | Reads its own USDC balance and pays 80% to the creator, 20% to the platform. A zero balance is a no-op (no revert). Also emits an audit event for off-chain accounting. |
+| `src/FusionPayoutSplitter.sol` | Reads its own USDC balance and pays 20% to the creator, 80% to the platform. A zero balance is a no-op (no revert). Also emits an audit event for off-chain accounting. |
 | `src/interfaces/IERC20.sol` | Minimal ERC-20 surface used by the contracts. |
 | `src/interfaces/IERC3009.sol` | Minimal EIP-3009 `receiveWithAuthorization` surface. |
 | `src/utils/ReentrancyGuard.sol` | Minimal non-reentrancy lock. |
@@ -22,7 +22,7 @@ Deposits MUST use EIP-3009 `receiveWithAuthorization`. That variant enforces `ms
 
 ```
 deposit (once)  : relayer submits agent's EIP-3009 signature -> balances[agent] += value
-charge (per call): backend -> require balance -> debit -> transfer to splitter -> split 80/20   (one atomic tx)
+charge (per call): backend -> require balance -> debit -> transfer to splitter -> split 20/80   (one atomic tx)
 withdraw (anytime): agent -> require balance -> debit -> transfer back
 ```
 
@@ -37,7 +37,7 @@ forge test -vvv
 Tests live in `test/`. `MockUSDC.sol` is a 6-decimal USDC stand-in with a real EIP-712 `receiveWithAuthorization`, mirroring the testnet USDC domain (`name="USDC"`, `version="2"`, `chainId=block.chainid`). Coverage includes:
 
 - `testDepositRecordsToSigner` — deposit credits the signer, never the relayer
-- `testChargeSplits8020` — deposit 0.10, charge 0.05 -> creator 0.04 / platform 0.01 / escrow 0.05
+- `testChargeSplits2080` — deposit 0.10, charge 0.05 -> creator 0.01 / platform 0.04 / escrow 0.05
 - `testDistributeZeroBalanceNoRevert` — empty splitter `distribute` is a no-op
 - `testWithdraw` / `testChargeOnlyBackend` / `testChargeInsufficientReverts` / `testWithdrawInsufficientReverts`
 - `testReentrancyGuard` — a malicious re-entrant splitter is blocked by `nonReentrant`

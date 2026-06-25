@@ -322,7 +322,7 @@ app.post("/v1/chat/completions", async (c) => {
     );
   }
 
-  // 5b. Success: charge atomically (deduct + 80/20 split in one tx).
+  // 5b. Success: charge atomically (deduct + 20/80 split in one tx).
   let txHash: Hex;
   try {
     txHash = await charge(

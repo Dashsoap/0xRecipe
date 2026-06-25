@@ -109,15 +109,15 @@ contract AgentEscrowTest is Test {
         assertEq(usdc.balanceOf(address(escrow)), value, "escrow holds funds");
     }
 
-    /// @notice deposit 100000 -> charge 50000 -> creator 40000 / platform 10000 / escrow left 50000.
-    function testChargeSplits8020() public {
+    /// @notice deposit 100000 -> charge 50000 -> creator 10000 / platform 40000 / escrow left 50000.
+    function testChargeSplits2080() public {
         _depositAsRelayer(100_000, keccak256("nonce-2")); // 0.10 USDC
 
         vm.prank(backend);
         escrow.charge(signer, 50_000, creator); // 0.05 USDC
 
-        assertEq(usdc.balanceOf(creator), 40_000, "creator 80%");
-        assertEq(usdc.balanceOf(platform), 10_000, "platform 20%");
+        assertEq(usdc.balanceOf(creator), 10_000, "creator 20%");
+        assertEq(usdc.balanceOf(platform), 40_000, "platform 80%");
         assertEq(escrow.balanceOf(signer), 50_000, "escrow balance left");
         assertEq(usdc.balanceOf(address(escrow)), 50_000, "escrow holds remaining");
         assertEq(usdc.balanceOf(address(splitter)), 0, "splitter swept clean");
