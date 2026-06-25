@@ -68,7 +68,7 @@
   }
 
   body {
-    background-color: #050507;
+    background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
     /* Avoid horizontal jump from the blurred mesh orbs bleeding past edges. */

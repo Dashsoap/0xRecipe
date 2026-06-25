@@ -97,7 +97,7 @@ export function Hero() {
       </div>
 
       {/* --- Signature funds-flow animation (the one glowing panel) ------ */}
-      <Reveal delay={0.1} y={32} className="mt-12 w-full md:mt-14">
+      <Reveal id="how" delay={0.1} y={32} className="mt-12 w-full scroll-mt-24 md:mt-14">
         <GlassPanel
           glow="cyan"
           className="mx-auto w-full max-w-5xl"

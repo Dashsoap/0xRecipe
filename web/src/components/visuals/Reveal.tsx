@@ -3,6 +3,8 @@
 import * as React from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
 
+import { useMounted } from "@/hooks/useMounted";
+
 // Signature spring curve, shared with the Tailwind `ease-spring` token.
 const SPRING = [0.32, 0.72, 0, 1] as const;
 
@@ -54,10 +56,8 @@ export function Reveal({
   }, []);
 
   // Defer the reduced-motion decision until after mount so the first client
-  // render matches the server (which always sees reduce=false).
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
-  const reducedNow = mounted && reduce;
+  // render matches the server (no hydration mismatch).
+  const reducedNow = useMounted() && reduce;
 
   const MotionTag = motion[as];
 

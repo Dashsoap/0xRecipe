@@ -3,6 +3,8 @@
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
+import { useMounted } from "@/hooks/useMounted";
+
 import { cn } from "@/lib/utils";
 
 /**
@@ -141,8 +143,7 @@ export function FlowDiagram({ className }: { className?: string }) {
   // tree must not gain/lose the animated layer between them), the reduced-motion
   // decision is deferred until after mount. Before mount we render exactly what
   // the server did: the animated layer present, no node pulsing yet.
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
 
   // Static once mounted under reduced motion; animated otherwise.
   const animate = mounted && !reduce;
