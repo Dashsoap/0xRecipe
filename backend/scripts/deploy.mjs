@@ -88,6 +88,17 @@ const out = {
 mkdirSync(new URL("../../contracts/deployments/", import.meta.url), { recursive: true });
 writeFileSync(new URL("../../contracts/deployments/injective-testnet-1439.json", import.meta.url), JSON.stringify(out, null, 2) + "\n");
 
+// Also upsert the two addresses into repo-root .env (public values; secrets untouched, not read out).
+try {
+  const envUrl = new URL("../../.env", import.meta.url);
+  let env = readFileSync(envUrl, "utf8");
+  const up = (c, k, v) => { const re = new RegExp(`^${k}=.*$`, "m"); return re.test(c) ? c.replace(re, `${k}=${v}`) : `${c.replace(/\s*$/, "")}\n${k}=${v}\n`; };
+  env = up(env, "AGENT_ESCROW_ADDRESS", escrow);
+  env = up(env, "FUSION_SPLITTER_ADDRESS", splitter);
+  writeFileSync(envUrl, env.endsWith("\n") ? env : env + "\n");
+  console.log("\n.env updated: AGENT_ESCROW_ADDRESS + FUSION_SPLITTER_ADDRESS");
+} catch (e) { console.log("\n(.env not auto-updated:", e.message, "— set the two lines below manually)"); }
+
 console.log("\n=== DONE ===");
 console.log("Splitter :", `${EXPLORER}/address/${splitter}`);
 console.log("Escrow   :", `${EXPLORER}/address/${escrow}`);
