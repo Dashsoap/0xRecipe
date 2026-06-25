@@ -58,22 +58,44 @@ export interface SolvencyResult {
 }
 
 /**
- * Check whether `agent` can afford `price`: on-chain balance minus current
- * holds must be >= price. Reads the live chain balance; the caller decides what
- * to do when `ok` is false (the API returns 403, not 402 — the agent should not
- * re-sign, it should reason about the shortfall).
+ * Atomically reserve `price` for an in-flight call.
+ *
+ * Concurrency guarantee: the hold is placed SYNCHRONOUSLY before the async
+ * balance read, so two requests from the same agent both observe each other's
+ * holds when they resume after the read — only as many as the balance covers
+ * pass, the rest are rejected. (A check-then-hold across the await would let
+ * concurrent callers both pass and over-commit, then fail on-chain at charge.)
+ *
+ * On success the hold is RETAINED and the caller MUST release() it after the
+ * charge succeeds or the run fails. On a budget shortfall — or a balance-read
+ * error — the reservation is rolled back here before returning/throwing.
+ *
+ * `ok === false` means the budget wall was hit: the API returns 403 (not 402),
+ * the agent should reason about the shortfall rather than re-sign.
  */
-export async function checkSolvency(
+export async function reserve(
   agent: Address,
   price: bigint,
 ): Promise<SolvencyResult> {
-  const balance = await readBalance(agent);
-  const currentHold = heldFor(agent);
-  const available = balance - currentHold;
-  return {
-    ok: available >= price,
-    balance,
-    held: currentHold,
-    available,
-  };
+  // Place the hold first so concurrent calls observe it across the await below.
+  hold(agent, price);
+
+  let balance: bigint;
+  try {
+    balance = await readBalance(agent);
+  } catch (err) {
+    release(agent, price); // roll back on read failure — nothing was spent
+    throw err;
+  }
+
+  const totalHeld = heldFor(agent); // includes this reservation + concurrent ones
+  const ok = balance >= totalHeld;
+  const otherHeld = totalHeld - price; // holds excluding this reservation
+  const available = balance - otherHeld;
+
+  if (!ok) {
+    release(agent, price); // give the reservation back
+  }
+
+  return { ok, balance, held: otherHeld, available };
 }

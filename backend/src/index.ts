@@ -24,7 +24,7 @@ import type { FusionResult, SettlementEvent } from "@0xrecipe/shared";
 import { config } from "./config.js";
 import { getRecipe } from "./recipes.js";
 import { runFusion } from "./fusion.js";
-import { checkSolvency, hold, release } from "./solvency.js";
+import { reserve, release } from "./solvency.js";
 import { charge } from "./escrow.js";
 
 const app = new Hono();
@@ -102,6 +102,10 @@ function parseVoucherHeader(header: string | undefined): ParsedVoucher {
     throw new VoucherError("Voucher numeric fields must be integer strings.");
   }
 
+  if (maxPrice < 0n || nonce < 0n || expiry < 0n) {
+    throw new VoucherError("Voucher numeric fields must be non-negative.");
+  }
+
   if (typeof v.recipeId !== "string" || v.recipeId.length === 0) {
     throw new VoucherError("Voucher recipeId is required.");
   }
@@ -147,10 +151,16 @@ app.get("/events/stream", (c) => {
       listeners.delete(listener);
     });
 
-    // Hold the connection open until the client disconnects.
-    while (!stream.aborted) {
-      await stream.sleep(15_000);
-      await stream.writeSSE({ event: "ping", data: String(Date.now()) });
+    try {
+      // Hold the connection open until the client disconnects.
+      while (!stream.aborted) {
+        await stream.sleep(15_000);
+        await stream.writeSSE({ event: "ping", data: String(Date.now()) });
+      }
+    } finally {
+      // Always clean up the listener — even if a write throws or the connection
+      // closes without onAbort firing — so the set cannot leak entries.
+      listeners.delete(listener);
     }
   });
 });
@@ -184,11 +194,25 @@ app.post("/v1/chat/completions", async (c) => {
     );
   }
 
-  const verification = await verifyVoucher({
-    voucher: parsed.voucher,
-    signature: parsed.signature,
-  });
-  if (!verification.valid) {
+  let signatureValid = false;
+  try {
+    const verification = await verifyVoucher({
+      voucher: parsed.voucher,
+      signature: parsed.signature,
+    });
+    signatureValid = verification.valid;
+  } catch {
+    // Malformed signature (bad length / non-hex) makes recovery throw — that is
+    // a client input error, not a server fault, so return 401 rather than 500.
+    return c.json(
+      {
+        error: "invalid_signature_format",
+        message: "The payment voucher signature is malformed.",
+      },
+      401,
+    );
+  }
+  if (!signatureValid) {
     return c.json(
       {
         error: "voucher_signature_mismatch",
@@ -224,10 +248,12 @@ app.post("/v1/chat/completions", async (c) => {
     );
   }
 
-  // 3. Solvency check against on-chain balance minus current holds.
+  // 3. Atomically reserve the price against on-chain balance minus holds.
+  //    reserve() places the hold before the async read, so concurrent calls
+  //    from the same agent cannot both pass when only one is affordable.
   let solvency;
   try {
-    solvency = await checkSolvency(agent, price);
+    solvency = await reserve(agent, price);
   } catch (err) {
     // Chain/config dependency not ready — honest error, no fake balance.
     return c.json(
@@ -256,8 +282,7 @@ app.post("/v1/chat/completions", async (c) => {
     );
   }
 
-  // 4. Hold the price, run Fusion, charge only on success.
-  hold(agent, price);
+  // 4. The price is already held by reserve(); run Fusion, charge on success.
   let result: FusionResult;
   try {
     let userMessage = "";
