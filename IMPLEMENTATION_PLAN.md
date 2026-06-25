@@ -13,7 +13,7 @@
 
 ### 链与浏览器
 - **Injective EVM testnet**:chainId `1439`,CAIP-2 `eip155:1439`
-- RPC `https://k8s.testnet.json-rpc.injective.network/`(公共节点有 per-IP 限频;频繁部署备 thirdweb `https://1439.rpc.thirdweb.com` 或 PublicNode)
+- RPC:**优先 thirdweb `https://1439.rpc.thirdweb.com`**(公共 k8s 节点 `https://k8s.testnet.json-rpc.injective.network/` 有 per-IP 限频,且实测其 `eth_getTransactionReceipt` 不可靠——交易已上块仍返回 not found;PublicNode 备用)
 - WS `wss://k8s.testnet.ws.injective.network/`;浏览器 `https://testnet.blockscout.injective.network`
 - gas token **INJ**,faucet `https://testnet.faucet.injective.network/`(每地址 24h 一次 → 预充 2-3 个地址)
 
@@ -33,14 +33,14 @@
 - `@injectivelabs/x402` alpha(0.0.1,源码 404):内置 1439 网络配置 + EIP-3009 签名/验签 helper(version "2")→ **复用它的签名原语**,facilitator 角色已大幅缩小(见 §1.5)
 
 ### 模型来源 = 统一 OpenAI 兼容网关(已实测),配方 = 模型 × 渠道 × 价格档
-- **网关已验证**:base `https://537-ai.net/v1`(OpenAI 兼容),一个 `base_url` + 一个 key 调用,后端**不直接接官方 SDK**。实测(2026-06-25):
+- **网关已验证**:base `<OpenAI 兼容网关 base_url,放 .env、不入库>`,一个 `base_url` + 一个 key 调用,后端**不直接接官方 SDK**。实测(2026-06-25):
   - ✅ key 有效;✅ 推理通;✅ **`json_schema` strict 透传**(gpt-5.5 返回严格符合 schema 的 JSON → judge JSON 硬保证);✅ **streaming SSE 透传**(标准 `chat.completion.chunk`)
 - **渠道(channel)是一等概念**:同一模型可由多渠道供给、**不同价格/质量**(new-api 式)。已验证两条渠道(同网关、不同 key):
   - `标准渠道`(`LLM_GATEWAY_KEY`):72 模型,gpt/claude/gemini 混合源
-  - `纯血渠道`(`LLM_GATEWAY_KEY_PURE`):9 个 claude,官方源(质量高、价更贵)
+  - `官方源渠道`(`LLM_GATEWAY_KEY_PURE`):9 个 claude,官方源(质量高、价更贵)
   - key 在 `~/0xRecipe/.env`(gitignored,**绝不进 repo / 不下发 agent**)
 - **配方(recipe)= 任意 N 个 (模型,渠道) 做 panel + 1 个做 judge**,创作者按所选渠道成本自主定价(D6:价 ≥ 2× 上游成本,**按渠道算**)。把「同模型多源不同价」做成配方市场核心卖点。
-- **demo 配方**:LegalReviewer ≤3 panel(如 gpt-5.5 标准 + claude-opus-4-8 纯血 + 1 个)+ gpt-5.5 judge;一镜到底控延迟/成本,panel ≤3。
+- **demo 配方**:LegalReviewer ≤3 panel(如 gpt-5.5 标准 + claude-opus-4-8 官方源 + 1 个)+ gpt-5.5 judge;一镜到底控延迟/成本,panel ≤3。
 - ⚠️ **用户可见层只说质量档**(如「官方源 / 标准源」),**绝不出现**网关产品名、「纯血/逆向」这类内部词(CLAUDE.md 母规则)。
 - ⚠️ 残留待验:judge 若改用 Claude-via-网关,需另测 Claude 的 json_schema 透传(当前 judge=gpt-5.5 已验,不阻塞)。
 
@@ -166,17 +166,17 @@
 ## 3. 环境变量清单(后端)
 
 ```
-RPC_URL                 = https://k8s.testnet.json-rpc.injective.network/
+RPC_URL                 = https://1439.rpc.thirdweb.com   # thirdweb 为主:k8s 公共节点 receipt 不可靠
 CHAIN_ID                = 1439
 USDC_ADDRESS            = 0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d
-AGENT_ESCROW_ADDRESS    = <Day 2 部署后填>
-FUSION_SPLITTER_ADDRESS = <Day 2 部署后填>
+AGENT_ESCROW_ADDRESS    = <部署脚本自动写入;见 contracts/deployments/injective-testnet-1439.json>
+FUSION_SPLITTER_ADDRESS = <部署脚本自动写入;同上>
 PLATFORM_ADDR           = <平台收款地址>
 HARDCODED_CREATOR_ADDR  = <创作者测试钱包>
-BACKEND_PRIVATE_KEY     = <后端热钱包:充 INJ;deposit relayer + charge() onlyBackend 签名>
-LLM_GATEWAY_URL         = https://537-ai.net/v1   # OpenAI 兼容,已实测
+BACKEND_PRIVATE_KEY     = <后端热钱包:充 INJ;deposit relayer + charge() onlyBackend 签名>  # 现用 MNEMONIC 派生 index0 代替
+LLM_GATEWAY_URL         = <OpenAI 兼容网关 base_url>   # 放 .env、不入库;已实测透传 json_schema/SSE
 LLM_GATEWAY_KEY         = <标准渠道 key,72 模型;在 .env,绝不进 repo / 不下发 agent>
-LLM_GATEWAY_KEY_PURE    = <纯血 Claude 渠道 key,9 个 claude 官方源;在 .env>
+LLM_GATEWAY_KEY_PURE    = <官方源 Claude 渠道 key,9 个 claude 官方源;在 .env>
 RECIPE_PRICE_USDC       = <Day 2 按 D6 实算后定>
 VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 ```
@@ -198,7 +198,7 @@ VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 
 | ID | 风险 | 影响 | 缓解 |
 |---|---|---|---|
-| **R1** | `receiveWithAuthorization` → 合约存款记账是唯一未验证原语 | Day 1 阻塞 | Day 1 第一件事专测此路径(含确认 `transferWithAuthorization`→合约 不记账的坑) |
+| **R1** | `receiveWithAuthorization` → 合约存款记账是唯一未验证原语 | ✅ **已关闭** | 已链上验证(testnet 1439):agent 签 EIP-3009 → 后端 relay `depositFor` 记账到签名者 → `charge` 扣费 + 20/80 分账全通过(`backend/scripts/spike-deposit-charge.mjs`) |
 | **R2** | `@injectivelabs/x402` alpha(0.0.1,源码 404) | 集成不确定 | pin 死版本,只取其 EIP-3009 签名原语;读 node_modules 确认 API |
 | **R3** | escrow 托管 agent 资金,`onlyBackend` key 泄漏影响面=总托管额 | 安全 | 每笔 Charged 事件可审计;固定单价;V1 voucher 上链 |
 | **R4** | 仅凭地址扣费可被冒充 | 安全 | C10:每调 voucher 验签;脚本 demo 走捷径要标注 |
@@ -217,5 +217,5 @@ VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 
 **本文件随进度更新 `Status`。**
 ```
-状态:Stage 1 未开始 / Stage 2 未开始 / Stage 3 未开始 / Stage 4 未开始
+状态:Stage 1 ✅ 完成(合约+测试+脚手架,forge test 8/8) / Stage 2 🚧 进行中(✅ 合约部署 testnet 1439 + R1 链上验证 + .env 配置;分账已定 创作者 20% / 平台 80%;待 重部署 20/80 合约 + 后端接真网关 + curl 端到端) / Stage 3 未开始 / Stage 4 未开始
 ```
