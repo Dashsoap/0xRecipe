@@ -49,7 +49,9 @@ export const AGENT_ESCROW_ABI = [
       { name: "validAfter", type: "uint256" },
       { name: "validBefore", type: "uint256" },
       { name: "nonce", type: "bytes32" },
-      { name: "sig", type: "bytes" },
+      { name: "v", type: "uint8" },
+      { name: "r", type: "bytes32" },
+      { name: "s", type: "bytes32" },
     ],
     outputs: [],
   },
@@ -131,7 +133,10 @@ export interface RelayDepositParams {
   validAfter: bigint;
   validBefore: bigint;
   nonce: Hex;
-  sig: Hex;
+  /** EIP-3009 signature components (the contract takes v, r, s — not packed). */
+  v: number;
+  r: Hex;
+  s: Hex;
 }
 
 /**
@@ -151,17 +156,25 @@ export async function relayDeposit(params: RelayDepositParams): Promise<Hex> {
       params.validAfter,
       params.validBefore,
       params.nonce,
-      params.sig,
+      params.v,
+      params.r,
+      params.s,
     ],
     account,
     chain: injectiveTestnet,
   });
 }
 
+/** How long to wait for a charge tx receipt before treating it as failed (ms). */
+const CHARGE_RECEIPT_TIMEOUT_MS = 60_000;
+
 /**
  * Charge an agent after a successful call: one atomic tx that deducts the
- * balance, transfers to the splitter, and distributes 20/80. Returns the tx
- * hash. `onlyBackend` on-chain; signed by the backend hot wallet.
+ * balance, transfers to the splitter, and distributes 20/80. Waits for the
+ * transaction receipt and requires an on-chain success before returning, so a
+ * resolved call means the charge is settled (not merely broadcast to the
+ * mempool). Returns the tx hash. `onlyBackend` on-chain; signed by the backend
+ * hot wallet.
  */
 export async function charge(
   agent: Address,
@@ -170,7 +183,7 @@ export async function charge(
 ): Promise<Hex> {
   const address = escrowAddress();
   const { walletClient, account } = getBackendWallet();
-  return walletClient.writeContract({
+  const hash = await walletClient.writeContract({
     address,
     abi: AGENT_ESCROW_ABI,
     functionName: "charge",
@@ -178,4 +191,17 @@ export async function charge(
     account,
     chain: injectiveTestnet,
   });
+
+  // writeContract resolves on broadcast, NOT on mining. Wait for the receipt and
+  // require an on-chain success before the caller treats the charge as settled —
+  // otherwise a reverted/dropped charge would be reported as a paid settlement
+  // and the solvency hold would release while the balance is still undeducted.
+  const receipt = await getPublicClient().waitForTransactionReceipt({
+    hash,
+    timeout: CHARGE_RECEIPT_TIMEOUT_MS,
+  });
+  if (receipt.status !== "success") {
+    throw new Error(`Charge transaction ${hash} reverted on-chain.`);
+  }
+  return hash;
 }

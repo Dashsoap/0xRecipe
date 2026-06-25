@@ -18,6 +18,7 @@ import { streamSSE } from "hono/streaming";
 import { getAddress, type Address, type Hex } from "viem";
 import {
   verifyVoucher,
+  injectiveTestnet,
   type PaymentVoucher,
 } from "@0xrecipe/x402";
 import type { FusionResult, SettlementEvent } from "@0xrecipe/shared";
@@ -26,6 +27,7 @@ import { getRecipe } from "./recipes.js";
 import { runFusion } from "./fusion.js";
 import { reserve, release } from "./solvency.js";
 import { charge } from "./escrow.js";
+import { claimNonce, settleNonce, releaseNonce } from "./nonces.js";
 
 const app = new Hono();
 
@@ -114,13 +116,6 @@ function parseVoucherHeader(header: string | undefined): ParsedVoucher {
     voucher: { agent, recipeId: v.recipeId, maxPrice, nonce, expiry },
     signature: parsed.signature as Hex,
   };
-}
-
-/** Convert a USDC decimal string (e.g. "0.05") to 6-decimal smallest units. */
-function usdcToUnits(decimal: string): bigint {
-  const [whole = "", frac = ""] = decimal.split(".");
-  const fracPadded = (frac + "000000").slice(0, 6);
-  return BigInt(whole || "0") * 1_000_000n + BigInt(fracPadded || "0");
 }
 
 // --- Routes ------------------------------------------------------------------
@@ -236,7 +231,7 @@ app.post("/v1/chat/completions", async (c) => {
     );
   }
 
-  const price = usdcToUnits(recipe.pricePerCallUsdc);
+  const price = recipe.priceUnits;
   if (parsed.voucher.maxPrice < price) {
     return c.json(
       {
@@ -248,6 +243,22 @@ app.post("/v1/chat/completions", async (c) => {
     );
   }
 
+  // 2.5. Claim the voucher nonce (replay guard): one signed voucher settles at
+  //      most once. Claimed synchronously before the reserve so two identical
+  //      submissions cannot both proceed; freed again on any path that does not
+  //      charge, and marked permanently spent only once a charge settles.
+  if (!claimNonce(agent, parsed.voucher.nonce, parsed.voucher.expiry, nowSec)) {
+    return c.json(
+      {
+        error: "voucher_replayed",
+        message:
+          "This payment voucher has already been used. Sign a new voucher " +
+          "with a fresh nonce for another call.",
+      },
+      401,
+    );
+  }
+
   // 3. Atomically reserve the price against on-chain balance minus holds.
   //    reserve() places the hold before the async read, so concurrent calls
   //    from the same agent cannot both pass when only one is affordable.
@@ -255,13 +266,15 @@ app.post("/v1/chat/completions", async (c) => {
   try {
     solvency = await reserve(agent, price);
   } catch (err) {
-    // Chain/config dependency not ready — honest error, no fake balance.
+    // Chain/config dependency not ready — honest error, no fake balance. The
+    // raw cause is logged server-side, never returned to the caller.
+    releaseNonce(agent, parsed.voucher.nonce);
+    console.error("[solvency] on-chain balance read failed:", err);
     return c.json(
       {
         error: "solvency_check_unavailable",
         message:
-          "Could not read the on-chain escrow balance. " +
-          (err as Error).message,
+          "The payment service is temporarily unavailable. Please try again shortly.",
       },
       503,
     );
@@ -269,6 +282,7 @@ app.post("/v1/chat/completions", async (c) => {
 
   if (!solvency.ok) {
     // Budget wall: 403, not 402. Client must not re-sign.
+    releaseNonce(agent, parsed.voucher.nonce);
     return c.json(
       {
         error: "insufficient_balance",
@@ -298,6 +312,7 @@ app.post("/v1/chat/completions", async (c) => {
     }
     if (userMessage.trim().length === 0) {
       release(agent, price);
+      releaseNonce(agent, parsed.voucher.nonce);
       return c.json(
         {
           error: "empty_request",
@@ -309,14 +324,18 @@ app.post("/v1/chat/completions", async (c) => {
 
     result = await runFusion(recipe, userMessage);
   } catch (err) {
-    // 5a. Failure: release the hold, do NOT charge, surface an honest error.
+    // 5a. Failure: release the hold + nonce, do NOT charge, surface an honest
+    //     error. The raw cause is logged server-side, never returned — it can
+    //     carry upstream model ids / SDK text (user-visible-layer rule).
     release(agent, price);
+    releaseNonce(agent, parsed.voucher.nonce);
+    console.error("[fusion] run failed:", err);
     return c.json(
       {
         error: "fusion_failed",
         message:
           "This run could not be completed, so you were not charged. " +
-          (err as Error).message,
+          "Please try again shortly.",
       },
       502,
     );
@@ -331,21 +350,26 @@ app.post("/v1/chat/completions", async (c) => {
       getAddress(recipe.creatorAddress),
     );
   } catch (err) {
-    // Charge failed after a successful run. Release the hold and report
-    // honestly rather than returning an unpaid result as if settled.
+    // Charge failed (or reverted on-chain) after a successful run. Release the
+    // hold + nonce and report honestly rather than returning an unpaid result
+    // as if settled. The agent can retry the same voucher — nothing was charged.
     release(agent, price);
+    releaseNonce(agent, parsed.voucher.nonce);
+    console.error("[charge] settlement failed:", err);
     return c.json(
       {
         error: "charge_failed",
         message:
-          "The result was produced but settlement failed; no charge was made. " +
-          (err as Error).message,
+          "The result was produced but settlement did not complete, so you " +
+          "were not charged. Please try again shortly.",
       },
       502,
     );
   }
 
-  // 6. Release the hold and broadcast the settlement.
+  // 6. Confirmed on-chain (charge() awaited the receipt): mark the voucher
+  //    permanently spent, release the hold, and broadcast the settlement.
+  settleNonce(agent, parsed.voucher.nonce);
   release(agent, price);
 
   const event: SettlementEvent = {
@@ -364,11 +388,30 @@ app.post("/v1/chat/completions", async (c) => {
 
 // --- Server boot -------------------------------------------------------------
 
-const port = Number(process.env.PORT ?? 3001);
+/**
+ * Start the HTTP server. Skipped under NODE_ENV=test so the app can be imported
+ * and exercised via `app.fetch` without binding a port.
+ */
+function startServer(): void {
+  // Fail fast if CHAIN_ID was overridden to something this build cannot honor:
+  // the voucher domain and every settlement client are pinned to Injective EVM
+  // testnet, so a divergent CHAIN_ID would only let /health misreport the chain.
+  if (config.chainId !== injectiveTestnet.id) {
+    throw new Error(
+      `CHAIN_ID=${config.chainId} is not supported; this build settles only on ` +
+        `Injective EVM testnet (${injectiveTestnet.id}). Unset the override.`,
+    );
+  }
 
-serve({ fetch: app.fetch, port }, (info) => {
-  // eslint-disable-next-line no-console
-  console.log(`0xRecipe backend listening on http://localhost:${info.port}`);
-});
+  const port = Number(process.env.PORT ?? 3001);
+  serve({ fetch: app.fetch, port }, (info) => {
+    // eslint-disable-next-line no-console
+    console.log(`0xRecipe backend listening on http://localhost:${info.port}`);
+  });
+}
+
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}
 
 export { app, broadcast };

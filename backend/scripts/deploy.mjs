@@ -49,6 +49,7 @@ const escrowArt = art("AgentEscrow.sol/AgentEscrow.json");
 
 // --- Splitter: reuse a known address, else a prior tx, else deploy fresh ---
 let splitter;
+let splitterTx = SPLITTER_TX || null;
 if (SPLITTER_ADDR) {
   const code = await pub.getCode({ address: SPLITTER_ADDR }).catch(() => undefined);
   if (code && code !== "0x") { splitter = SPLITTER_ADDR; console.log("\nReusing splitter at", splitter, "(codeLen", (code.length - 2) / 2 + ")"); }
@@ -67,8 +68,23 @@ if (!splitter) {
   const r = await waitReceipt(h);
   if (!r || r.status !== "success") { console.error("Splitter deploy failed/unconfirmed:", h); process.exit(1); }
   splitter = r.contractAddress;
+  splitterTx = h;
   console.log("  splitter :", splitter);
 }
+
+// --- Guard: the live splitter must really be creator 20% / platform 80% ---
+// Prevents recording / pointing the escrow at an inverted (80/20) build.
+const splitterEcon = [
+  { type: "function", name: "CREATOR_BPS", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "DENOM", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+];
+const creatorBps = await pub.readContract({ address: splitter, abi: splitterEcon, functionName: "CREATOR_BPS" });
+const denom = await pub.readContract({ address: splitter, abi: splitterEcon, functionName: "DENOM" });
+if (creatorBps !== 200000n || denom !== 1000000n) {
+  console.error(`Splitter economics mismatch: CREATOR_BPS=${creatorBps} DENOM=${denom}; expected 200000/1000000 (creator 20% / platform 80%). Refusing to deploy escrow against it.`);
+  process.exit(1);
+}
+console.log(`  economics: creator ${(Number(creatorBps) / Number(denom)) * 100}% / platform ${100 - (Number(creatorBps) / Number(denom)) * 100}% (verified) `);
 
 // --- Escrow ---
 console.log("\nDeploying AgentEscrow(usdc, backend, splitter)...");
@@ -83,7 +99,7 @@ const out = {
   chainId: 1439, rpc: RPC, usdc: USDC,
   fusionSplitter: splitter, agentEscrow: escrow,
   backend: deployer.address, platform: platform.address, creator: creator.address,
-  tx: { splitter: SPLITTER_TX || "(fresh)", escrow: h2 },
+  tx: { splitter: splitterTx || "(reused)", escrow: h2 },
 };
 mkdirSync(new URL("../../contracts/deployments/", import.meta.url), { recursive: true });
 writeFileSync(new URL("../../contracts/deployments/injective-testnet-1439.json", import.meta.url), JSON.stringify(out, null, 2) + "\n");

@@ -35,6 +35,8 @@ export interface Recipe {
   name: string;
   /** Per-call price in USDC, decimal string (e.g. "0.05"). */
   pricePerCallUsdc: string;
+  /** Per-call price in USDC 6-decimal base units, validated + parsed at boot. */
+  priceUnits: bigint;
   /** Creator payout address; placeholder here, overridable via env. */
   creatorAddress: string;
   panel: PanelMember[];
@@ -51,10 +53,32 @@ const PLACEHOLDER_CREATOR_ADDRESS =
 /** Decimal-string price for the demo recipe; overridable via RECIPE_PRICE_USDC. */
 const DEFAULT_PRICE_USDC = "0.05";
 
+/**
+ * Strict USDC decimal-string -> 6-decimal base units. Rejects anything that is
+ * not a non-negative decimal with at most 6 fractional digits, so a malformed
+ * RECIPE_PRICE_USDC fails fast at startup rather than 500-ing every paid call
+ * or silently truncating sub-micro precision.
+ */
+export function parseUsdcAmount(decimal: string): bigint {
+  if (!/^\d+(\.\d{1,6})?$/.test(decimal)) {
+    throw new Error(
+      `Invalid USDC amount "${decimal}": expected a non-negative decimal with ` +
+        `at most 6 fractional digits (e.g. "0.05").`,
+    );
+  }
+  const [whole = "0", frac = ""] = decimal.split(".");
+  const fracPadded = (frac + "000000").slice(0, 6);
+  return BigInt(whole) * 1_000_000n + BigInt(fracPadded);
+}
+
+/** Resolved per-call price string for the single demo recipe. */
+const PRICE_USDC = config.recipePriceUsdc ?? DEFAULT_PRICE_USDC;
+
 export const LEGAL_REVIEWER_RECIPE: Recipe = {
   id: "legal-reviewer-v1",
   name: "Legal Contract Reviewer",
-  pricePerCallUsdc: config.recipePriceUsdc ?? DEFAULT_PRICE_USDC,
+  pricePerCallUsdc: PRICE_USDC,
+  priceUnits: parseUsdcAmount(PRICE_USDC),
   creatorAddress: config.hardcodedCreatorAddr ?? PLACEHOLDER_CREATOR_ADDRESS,
   panel: [
     {
