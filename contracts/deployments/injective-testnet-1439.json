@@ -1,0 +1,14 @@
+{
+  "chainId": 1439,
+  "rpc": "https://1439.rpc.thirdweb.com",
+  "usdc": "0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d",
+  "fusionSplitter": "0x0Ca68e5E575cD29ac7D2E69b0335C30e73ded1CA",
+  "agentEscrow": "0x7a35e1ced482a117e468367bfdd42d2f90c1f6ab",
+  "backend": "0xF615D233EDff07f48ce7a23863Ccd819051bccff",
+  "platform": "0xB48a902817E9f9a15c5bad33751033Ad30F000A3",
+  "creator": "0x31EF222895Ac2cb5553EE93A510738d67D73B9B1",
+  "tx": {
+    "splitter": "(fresh)",
+    "escrow": "0xdbe72df4987431595ec76072c184a851c6b21cb59e636bfcdca575bdb3a3848c"
+  }
+}
