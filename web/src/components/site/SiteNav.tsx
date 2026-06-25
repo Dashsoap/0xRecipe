@@ -70,7 +70,7 @@ export function SiteNav() {
         {/* Desktop CTA */}
         <div className="ml-1 hidden md:block">
           <Button size="sm" withArrow>
-            获取调用权限
+            开始调用
           </Button>
         </div>
 
@@ -121,7 +121,7 @@ export function SiteNav() {
                 className="mt-6"
               >
                 <Button size="lg" withArrow className="w-full" onClick={() => setOpen(false)}>
-                  获取调用权限
+                  开始调用
                 </Button>
               </motion.div>
             </div>
@@ -163,13 +163,15 @@ function MorphIcon({ open, reduce }: { open: boolean; reduce: boolean }) {
       height={18}
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.25}
+      strokeWidth={1.5}
       strokeLinecap="round"
       aria-hidden
     >
       <motion.line
         x1="4"
         x2="20"
+        y1="8"
+        y2="8"
         animate={open ? { y1: 12, y2: 12, rotate: 45 } : { y1: 8, y2: 8, rotate: 0 }}
         transition={t}
         style={{ transformOrigin: "center" }}

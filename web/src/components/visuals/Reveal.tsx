@@ -53,18 +53,21 @@ export function Reveal({
     return () => window.clearTimeout(t);
   }, []);
 
+  // Defer the reduced-motion decision until after mount so the first client
+  // render matches the server (which always sees reduce=false).
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  const reducedNow = mounted && reduce;
+
   const MotionTag = motion[as];
 
-  if (reduce) {
-    const Tag = as;
-    return (
-      <Tag className={className} style={style} id={id}>
-        {children}
-      </Tag>
-    );
-  }
-
-  const shown = inView || settled;
+  // The element type and `initial` never depend on `reduce`, so the SSR HTML and
+  // the first client render are identical (no hydration mismatch). Only the
+  // post-mount animation target reacts to reduced motion: when reduced, jump
+  // straight to the shown state with a zero-length transition.
+  const shown = reducedNow || inView || settled;
+  const VISIBLE = { opacity: 1, y: 0, filter: "blur(0px)" } as const;
+  const HIDDEN = { opacity: 0, y, filter: "blur(8px)" } as const;
 
   return (
     <MotionTag
@@ -72,13 +75,11 @@ export function Reveal({
       className={className}
       style={style}
       id={id}
-      initial={{ opacity: 0, y, filter: "blur(8px)" }}
-      animate={
-        shown
-          ? { opacity: 1, y: 0, filter: "blur(0px)" }
-          : { opacity: 0, y, filter: "blur(8px)" }
+      initial={HIDDEN}
+      animate={shown ? VISIBLE : HIDDEN}
+      transition={
+        reducedNow ? { duration: 0 } : { duration: 0.7, delay, ease: SPRING }
       }
-      transition={{ duration: 0.7, delay, ease: SPRING }}
     >
       {children}
     </MotionTag>

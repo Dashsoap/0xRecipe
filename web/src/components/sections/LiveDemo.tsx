@@ -10,11 +10,12 @@ import { CreatorPane } from "@/components/demo/CreatorPane";
 import { ExplorerPane } from "@/components/demo/ExplorerPane";
 
 /**
- * LiveDemo (id="demo") — the second surface. An eyebrow + editorial heading
- * introduce three glass panes laid out as an asymmetric bento grid: the
- * paying agent and the earning creator side by side on top, the on-chain
- * explorer spanning beneath them. Data comes from useEventStream; while it is
- * placeholder the section is clearly badged as demo.
+ * LiveDemo (id="demo") - the second surface. The heading carries the section
+ * on its own (no eyebrow; the single site eyebrow lives in the hero). Three
+ * glass panes sit in an asymmetric bento grid: the paying agent and the
+ * earning creator side by side on top, the on-chain explorer spanning beneath.
+ * Data comes from useEventStream; while it is placeholder the section is
+ * clearly badged as demo.
  */
 export function LiveDemo() {
   const stream = useEventStream();
@@ -33,7 +34,6 @@ export function LiveDemo() {
       <Reveal>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-4">
-            <Badge variant="eyebrow">Live Demo</Badge>
             <h2 className="max-w-2xl text-4xl font-semibold leading-[1.05] tracking-tight text-white md:text-6xl">
               一次付费,按调用扣费,
               <br className="hidden sm:block" />

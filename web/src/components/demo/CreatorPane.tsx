@@ -24,10 +24,12 @@ export interface CreatorPaneProps {
 }
 
 /**
- * Creator pane — the earning side. Double-Bezel glass with an emerald accent:
+ * Creator pane - the earning side. Double-Bezel glass with an emerald accent:
  * payout address in mono, cumulative income, and a "this split" focal block
  * where the amount fades up with an emerald glow to celebrate an on-chain
- * arrival. Empty state stays calm and waits for the next call.
+ * arrival. The panel rests quiet (hairline ring only); the emerald glow is
+ * reserved for the settled split, the one true focal moment here. Empty
+ * state stays calm and waits for the next call.
  */
 export function CreatorPane({
   address,
@@ -38,7 +40,7 @@ export function CreatorPane({
   return (
     <GlassPanel
       glow="none"
-      className="h-full transition-shadow duration-700 ease-spring hover:shadow-glow-emerald"
+      className="h-full transition-colors duration-700 ease-spring hover:ring-white/15"
       innerClassName="relative flex h-full flex-col overflow-hidden p-6"
     >
       {/* Localised emerald wash behind the split block. */}
@@ -102,6 +104,11 @@ function SplitBlock({
   hasLatest: boolean;
 }) {
   const reduce = useReducedMotion();
+  // Defer the reduced-motion decision until after mount so the SSR HTML and the
+  // first client render share the same `initial` styles (no hydration mismatch).
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  const reducedNow = mounted && reduce;
 
   return (
     <div className="relative mt-auto overflow-hidden rounded-2xl bg-emerald-soft p-4 ring-1 ring-emerald/25">
@@ -121,13 +128,11 @@ function SplitBlock({
           <motion.span
             key={latestPayout}
             className="font-mono text-3xl font-semibold tracking-tight text-emerald drop-shadow-[0_0_18px_rgba(52,211,153,0.45)]"
-            initial={
-              reduce
-                ? false
-                : { opacity: 0, y: 10, filter: "blur(6px)" }
-            }
+            initial={{ opacity: 0, y: 10, filter: "blur(6px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            transition={{ duration: 0.6, ease: SPRING }}
+            transition={
+              reducedNow ? { duration: 0 } : { duration: 0.6, ease: SPRING }
+            }
           >
             +{formatUsdc(latestPayout)}
           </motion.span>

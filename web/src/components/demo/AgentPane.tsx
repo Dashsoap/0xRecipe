@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { ArrowUpRight } from "@phosphor-icons/react";
 
 import { Badge } from "@/components/ui/badge";
 import { GlassPanel } from "@/components/ui/glass-panel";
@@ -15,13 +16,12 @@ import {
   timeAgo,
 } from "@/lib/format";
 import type { CallRecord } from "@/hooks/useEventStream";
-import { cn } from "@/lib/utils";
 
 export interface AgentPaneProps {
   address: `0x${string}`;
   /** Remaining escrow balance, USDC base units. */
   balance: string;
-  /** 0–100, share of budget consumed. */
+  /** 0 to 100, share of budget consumed. */
   usedPct: number;
   /** Amount spent so far, USDC base units. */
   spent: string;
@@ -31,10 +31,11 @@ export interface AgentPaneProps {
 }
 
 /**
- * Agent pane — the paying side. Double-Bezel glass with a cyan accent: wallet
+ * Agent pane - the paying side. Double-Bezel glass with a cyan accent: wallet
  * address in mono, a large available-balance figure, a neon budget meter, and
  * a recent-calls list where each settled row carries a faint funds-flow beam
- * and links out to the on-chain transaction.
+ * and links out to the on-chain transaction. The panel itself rests quiet
+ * (hairline ring only); glow is reserved for the funds-flow beam and meter.
  */
 export function AgentPane({
   address,
@@ -47,7 +48,7 @@ export function AgentPane({
   return (
     <GlassPanel
       glow="none"
-      className="h-full transition-shadow duration-700 ease-spring hover:shadow-glow-cyan"
+      className="h-full transition-colors duration-700 ease-spring hover:ring-white/15"
       innerClassName="flex h-full flex-col p-6"
     >
       <div className="flex items-start justify-between gap-3">
@@ -119,7 +120,8 @@ export function AgentPane({
 }
 
 /** A single recent-call row: recipe + tx link on the left, amount + time on
- * the right, with a faint cyan funds-flow beam threaded across the top edge. */
+ * the right, with a faint cyan funds-flow beam threaded across the top edge for
+ * settled calls. Non-settled rows stay neutral (no off-palette colour). */
 function CallRow({ call }: { call: CallRecord }) {
   const settled = call.status === "settled";
   return (
@@ -140,22 +142,18 @@ function CallRow({ call }: { call: CallRecord }) {
             href={explorerTxUrl(call.txHash)}
             target="_blank"
             rel="noreferrer"
-            className="font-mono text-xs text-white/40 underline-offset-4 transition-colors duration-500 ease-spring hover:text-cyan hover:underline"
+            className="inline-flex items-center gap-1 font-mono text-xs text-white/40 underline-offset-4 transition-colors duration-500 ease-spring hover:text-cyan hover:underline"
           >
             {shortenHash(call.txHash)}
+            <ArrowUpRight weight="light" className="h-3 w-3" aria-hidden />
           </a>
         </div>
         <div className="shrink-0 text-right">
           <div className="font-mono text-sm font-medium text-white/90">
             −{formatUsdc(call.amount)}
           </div>
-          <div
-            className={cn(
-              "mt-0.5 text-[11px]",
-              settled ? "text-white/40" : "text-red-300/70",
-            )}
-          >
-            {settled ? timeAgo(call.timestamp) : "已驳回"}
+          <div className="mt-0.5 text-[11px] text-white/40">
+            {settled ? timeAgo(call.timestamp) : "未结算"}
           </div>
         </div>
       </div>
