@@ -16,3 +16,10 @@ broadcast/
 # misc
 .DS_Store
 *.log
+
+# tooling / local (scheduler + workflow scratch, build caches)
+.claude/
+.workflow/
+.turbo/
+*.tsbuildinfo
+.pnpm-store/

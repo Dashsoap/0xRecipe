@@ -1,0 +1,17 @@
+{
+  "name": "0xrecipe",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Fusion model marketplace on Injective EVM — agents pay per-call via on-chain stablecoin escrow; payouts split atomically on-chain.",
+  "packageManager": "pnpm@9.9.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "dev:backend": "pnpm --filter @0xrecipe/backend dev",
+    "dev:web": "pnpm --filter @0xrecipe/web dev",
+    "test:contracts": "cd contracts && forge test -vvv"
+  }
+}

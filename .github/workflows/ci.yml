@@ -1,0 +1,63 @@
+name: CI
+
+# Runs on every PR and on pushes to main. Only checks out public code and
+# installs public dependencies — no secrets, no gateway keys, no chain access.
+# The foundation builds and tests keyless by design.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: contracts (forge test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # forge-std is a submodule
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: forge build
+        working-directory: contracts
+        run: forge build --sizes
+
+      - name: forge test
+        working-directory: contracts
+        run: forge test -vvv
+
+  node:
+    name: node (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4 # reads packageManager from package.json
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Library packages must be built first: backend/web consume their dist/.
+      - name: Build shared packages
+        run: pnpm --filter @0xrecipe/shared --filter @0xrecipe/x402 build
+
+      - name: Typecheck all packages
+        run: pnpm -r typecheck
