@@ -1,6 +1,6 @@
 import { AbsoluteFill, useCurrentFrame, interpolate } from "remotion";
 import { COLORS, SAFE, TYPE, FONT, MONO } from "../theme";
-import { Eyebrow, Headline, Reveal, Highlight, GlassCard, Sub } from "../components/ui";
+import { Eyebrow, Headline, Reveal, Highlight, GlassCard, Sub, MaskUp } from "../components/ui";
 import { IconScale, IconDoc } from "../components/icons";
 
 const ModelChip: React.FC<{ at: number; tint: string; name: string }> = ({ at, tint, name }) => (
@@ -20,27 +20,27 @@ export const S6Fusion: React.FC = () => {
   return (
     <AbsoluteFill style={{ padding: SAFE, alignItems: "center", justifyContent: "center" }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 64, textAlign: "center" }}>
-        <Reveal at={2}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
-            <Eyebrow>The product — Fusion</Eyebrow>
+        <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
+          <Reveal at={2}><Eyebrow>The product — Fusion</Eyebrow></Reveal>
+          <MaskUp at={8} dur={22}>
             <Headline size={TYPE.title}>
               Don’t ask one model. Ask a <Highlight>panel</Highlight>.
             </Headline>
-          </div>
-        </Reveal>
+          </MaskUp>
+        </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 56 }}>
           {/* panel */}
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <ModelChip at={20} tint={COLORS.violetBright} name="Model A" />
-            <ModelChip at={30} tint={COLORS.cyan} name="Model B" />
-            <ModelChip at={40} tint={COLORS.emerald} name="Model C" />
+            <ModelChip at={20} tint="#10a37f" name="GPT" />
+            <ModelChip at={30} tint="#d97757" name="Claude" />
+            <ModelChip at={40} tint="#4285f4" name="Gemini" />
           </div>
 
           <Reveal at={52} y={0}><div style={{ fontFamily: FONT, fontSize: 56, color: COLORS.textFaint }}>→</div></Reveal>
 
           {/* judge */}
-          <Reveal at={58} scaleFrom={0.8}>
+          <Reveal at={58} scaleFrom={0.78} pop>
             <GlassCard glow={`${COLORS.violet}66`} style={{ width: 240, height: 240, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
               <IconScale size={104} color={COLORS.lavender} />
               <div style={{ fontFamily: FONT, fontWeight: 700, fontSize: TYPE.small, color: COLORS.white }}>Judge</div>

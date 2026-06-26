@@ -3,6 +3,7 @@ import { useCurrentFrame, interpolate, Easing } from "remotion";
 import { COLORS, FONT, MONO, TYPE } from "../theme";
 
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
+const BACK = Easing.bezier(0.34, 1.4, 0.5, 1); // gentle overshoot for "pop" entrances
 
 /** Fade + rise into a reserved layout slot, starting at frame `at`. */
 export const Reveal: React.FC<{
@@ -10,26 +11,89 @@ export const Reveal: React.FC<{
   dur?: number;
   y?: number;
   scaleFrom?: number;
+  pop?: boolean;
   children: React.ReactNode;
   style?: React.CSSProperties;
-}> = ({ at = 0, dur = 16, y = 44, scaleFrom = 1, children, style }) => {
+}> = ({ at = 0, dur = 16, y = 44, scaleFrom = 1, pop = false, children, style }) => {
   const frame = useCurrentFrame();
   const p = interpolate(frame, [at, at + dur], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: EASE,
   });
+  // opacity rises fast; scale uses an overshoot curve when `pop` is set.
+  const op = interpolate(frame, [at, at + dur * 0.6], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const s = interpolate(frame, [at, at + dur], [scaleFrom, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: pop ? BACK : EASE,
+  });
   return (
     <div
       style={{
-        opacity: p,
+        opacity: op,
         translate: `0px ${(1 - p) * y}px`,
-        scale: scaleFrom + (1 - scaleFrom) * p,
+        scale: s,
         ...style,
       }}
     >
       {children}
     </div>
+  );
+};
+
+/** Headline mask-reveal: text slides up from behind a clipping edge. */
+export const MaskUp: React.FC<{
+  at?: number;
+  dur?: number;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}> = ({ at = 0, dur = 24, children, style }) => {
+  const frame = useCurrentFrame();
+  const p = interpolate(frame, [at, at + dur], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: EASE,
+  });
+  const op = interpolate(frame, [at, at + dur * 0.4], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return (
+    <div style={{ overflow: "hidden", paddingBottom: "0.14em", ...style }}>
+      <div style={{ translate: `0px ${(1 - p) * 112}%`, opacity: op }}>{children}</div>
+    </div>
+  );
+};
+
+/** An SVG path that draws itself on between frames `at` and `at+dur`.
+ * Must be rendered inside an <svg>. */
+export const DrawLine: React.FC<{
+  d: string;
+  at?: number;
+  dur?: number;
+  stroke: string;
+  sw?: number;
+}> = ({ d, at = 0, dur = 24, stroke, sw = 3 }) => {
+  const frame = useCurrentFrame();
+  const offset = interpolate(frame, [at, at + dur], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: EASE,
+  });
+  return (
+    <path
+      d={d}
+      stroke={stroke}
+      strokeWidth={sw}
+      fill="none"
+      pathLength={1}
+      strokeDasharray={1}
+      strokeDashoffset={offset}
+    />
   );
 };
 

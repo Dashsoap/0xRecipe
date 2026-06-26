@@ -1,6 +1,6 @@
 import { AbsoluteFill } from "remotion";
 import { COLORS, SAFE, TYPE, FONT } from "../theme";
-import { Eyebrow, Headline, Sub, Reveal, Highlight, GlassCard } from "../components/ui";
+import { Eyebrow, Headline, Sub, Reveal, Highlight, GlassCard, MaskUp } from "../components/ui";
 import { IconAgent, IconSignature, IconCheck, IconBolt } from "../components/icons";
 
 const Step: React.FC<{ at: number; icon: React.ReactNode; label: string; tint: string }> = ({ at, icon, label, tint }) => (
@@ -22,14 +22,14 @@ export const S4Voucher: React.FC = () => {
   return (
     <AbsoluteFill style={{ padding: SAFE, alignItems: "center", justifyContent: "center" }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 76, textAlign: "center" }}>
-        <Reveal at={2}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
-            <Eyebrow>Step 2 — Every call</Eyebrow>
+        <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
+          <Reveal at={2}><Eyebrow>Step 2 — Every call</Eyebrow></Reveal>
+          <MaskUp at={8} dur={22}>
             <Headline size={TYPE.title}>
               Each call carries a <Highlight>signed voucher</Highlight>.
             </Headline>
-          </div>
-        </Reveal>
+          </MaskUp>
+        </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
           <Step at={22} tint={COLORS.lavender} icon={<IconAgent size={96} color={COLORS.lavender} />} label="Agent requests" />

@@ -1,6 +1,6 @@
 import { AbsoluteFill, useCurrentFrame, interpolate } from "remotion";
 import { COLORS, SAFE, TYPE, FONT, MONO } from "../theme";
-import { Eyebrow, Headline, Reveal, Highlight, GlassCard, Sub } from "../components/ui";
+import { Eyebrow, Headline, Reveal, Highlight, GlassCard, Sub, MaskUp } from "../components/ui";
 import { IconAgent } from "../components/icons";
 
 export const S7BudgetWall: React.FC = () => {
@@ -14,14 +14,14 @@ export const S7BudgetWall: React.FC = () => {
   return (
     <AbsoluteFill style={{ padding: SAFE, alignItems: "center", justifyContent: "center" }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 64, textAlign: "center" }}>
-        <Reveal at={2}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
-            <Eyebrow>Safe by design</Eyebrow>
+        <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
+          <Reveal at={2}><Eyebrow>Safe by design</Eyebrow></Reveal>
+          <MaskUp at={8} dur={22}>
             <Headline size={TYPE.title}>
               Out of budget? The agent <Highlight from={COLORS.violet} to={COLORS.cyan}>knows</Highlight>.
             </Headline>
-          </div>
-        </Reveal>
+          </MaskUp>
+        </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 64 }}>
           {/* balance meter */}
@@ -35,7 +35,7 @@ export const S7BudgetWall: React.FC = () => {
                 <div style={{ width: `${fill * 100}%`, height: "100%", borderRadius: 999, background: `linear-gradient(90deg, ${COLORS.emerald}, ${COLORS.cyan})` }} />
               </div>
               <div style={{ minHeight: 56 }}>
-                <div style={{ opacity: chipP, display: "inline-flex", alignItems: "center", gap: 14, padding: "12px 22px", borderRadius: 14, background: `${COLORS.violet}22`, border: `1px solid ${COLORS.violetBright}66` }}>
+                <div style={{ opacity: chipP, scale: `${0.84 + chipP * 0.16}`, display: "inline-flex", alignItems: "center", gap: 14, padding: "12px 22px", borderRadius: 14, background: `${COLORS.violet}22`, border: `1px solid ${COLORS.violetBright}66` }}>
                   <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 28, color: COLORS.violetBright }}>403 · insufficient balance</div>
                 </div>
               </div>

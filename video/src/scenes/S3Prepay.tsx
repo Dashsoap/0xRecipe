@@ -1,6 +1,6 @@
 import { AbsoluteFill, useCurrentFrame, interpolate, Easing } from "remotion";
 import { COLORS, SAFE, TYPE, FONT, MONO } from "../theme";
-import { Eyebrow, Headline, Sub, Reveal, Highlight, GlassCard, Coin } from "../components/ui";
+import { Eyebrow, Headline, Sub, Reveal, Highlight, GlassCard, Coin, MaskUp } from "../components/ui";
 import { IconWallet, IconLock } from "../components/icons";
 
 const Node: React.FC<{ children: React.ReactNode; label: string; w?: number; glow?: string }> = ({
@@ -24,14 +24,14 @@ export const S3Prepay: React.FC = () => {
   return (
     <AbsoluteFill style={{ padding: SAFE, alignItems: "center", justifyContent: "center" }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 70, textAlign: "center" }}>
-        <Reveal at={2}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
-            <Eyebrow>Step 1 — Prepay</Eyebrow>
+        <div style={{ display: "flex", flexDirection: "column", gap: 22, alignItems: "center" }}>
+          <Reveal at={2}><Eyebrow>Step 1 — Prepay</Eyebrow></Reveal>
+          <MaskUp at={8} dur={22}>
             <Headline size={TYPE.title}>
               One <Highlight>deposit</Highlight>, locked on-chain.
             </Headline>
-          </div>
-        </Reveal>
+          </MaskUp>
+        </div>
 
         <div style={{ position: "relative", width: 1500, height: 300, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Reveal at={18}>

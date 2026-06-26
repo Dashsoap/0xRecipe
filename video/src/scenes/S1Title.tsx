@@ -17,7 +17,7 @@ export const S1Title: React.FC = () => {
         <Reveal at={4}>
           <Eyebrow>Autonomous · Pay-per-call AI</Eyebrow>
         </Reveal>
-        <Reveal at={14} y={56}>
+        <Reveal at={12} y={28} scaleFrom={0.88} pop>
           <Headline size={TYPE.display} style={{ textShadow: `0 0 80px ${COLORS.violet}66` }}>
             <GradientText from={COLORS.violetBright} to={COLORS.cyan}>0x</GradientText>
             Recipe

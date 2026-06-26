@@ -1,20 +1,27 @@
 import { AbsoluteFill, useCurrentFrame, interpolate, Easing } from "remotion";
 import { COLORS } from "../theme";
 
-/** A single soft gradient blob that drifts slowly across the frame. */
-const Blob: React.FC<{
-  color: string;
+/** A large flowing rounded gradient form (the signature shape of the deck). */
+const FlowShape: React.FC<{
+  from: string;
+  to: string;
   size: number;
   x0: number;
   y0: number;
   dx: number;
   dy: number;
+  rot: number;
+  rotAmt: number;
   phase: number;
   opacity?: number;
-}> = ({ color, size, x0, y0, dx, dy, phase, opacity = 0.55 }) => {
+  blur?: number;
+}> = ({ from, to, size, x0, y0, dx, dy, rot, rotAmt, phase, opacity = 0.4, blur = 60 }) => {
   const frame = useCurrentFrame();
-  // Slow, continuous ease-in-out drift (cosine via bezier ping-pong over 600f).
-  const t = interpolate((frame + phase) % 600, [0, 300, 600], [0, 1, 0], {
+  // Slow, organic back-and-forth drift + gentle rotation over a long loop.
+  const t = interpolate((frame + phase) % 900, [0, 450, 900], [0, 1, 0], {
+    easing: Easing.inOut(Easing.ease),
+  });
+  const r = interpolate((frame + phase) % 900, [0, 450, 900], [-1, 1, -1], {
     easing: Easing.inOut(Easing.ease),
   });
   return (
@@ -22,30 +29,46 @@ const Blob: React.FC<{
       style={{
         position: "absolute",
         width: size,
-        height: size,
+        height: size * 0.82,
         left: x0 + dx * t,
         top: y0 + dy * t,
-        borderRadius: "50%",
-        background: `radial-gradient(circle at 50% 50%, ${color} 0%, transparent 68%)`,
-        filter: "blur(90px)",
+        borderRadius: "44% 56% 52% 48% / 50% 46% 54% 50%",
+        background: `linear-gradient(125deg, ${from}, ${to})`,
+        rotate: `${rot + r * rotAmt}deg`,
+        filter: `blur(${blur}px)`,
         opacity,
       }}
     />
   );
 };
 
-/** Persistent animated backdrop: deep indigo ground + drifting violet shapes. */
+/** Persistent animated backdrop: deep indigo ground + flowing violet shapes. */
 export const Background: React.FC = () => {
   return (
     <AbsoluteFill
       style={{
-        background: `radial-gradient(130% 120% at 18% 8%, ${COLORS.ink2} 0%, ${COLORS.ink1} 42%, ${COLORS.ink0} 100%)`,
+        background: `radial-gradient(135% 120% at 16% 6%, ${COLORS.ink2} 0%, ${COLORS.ink1} 44%, ${COLORS.ink0} 100%)`,
       }}
     >
-      <Blob color={COLORS.violet} size={1100} x0={-180} y0={-260} dx={140} dy={90} phase={0} opacity={0.5} />
-      <Blob color={COLORS.violetBright} size={900} x0={1150} y0={-160} dx={-120} dy={120} phase={150} opacity={0.42} />
-      <Blob color={COLORS.cyan} size={760} x0={1300} y0={620} dx={-90} dy={-70} phase={320} opacity={0.22} />
-      <Blob color="#4c1d95" size={1000} x0={420} y0={560} dx={80} dy={-60} phase={460} opacity={0.5} />
+      {/* signature flowing rounded forms */}
+      <FlowShape from={COLORS.violet} to="#3b1d8f" size={1280} x0={-360} y0={-340} dx={150} dy={90} rot={-18} rotAmt={6} phase={0} opacity={0.5} blur={55} />
+      <FlowShape from={COLORS.violetBright} to={COLORS.cyan} size={980} x0={1180} y0={-220} dx={-130} dy={130} rot={28} rotAmt={7} phase={300} opacity={0.36} blur={60} />
+      <FlowShape from="#4c1d95" to={COLORS.violet} size={1120} x0={520} y0={560} dx={90} dy={-70} rot={12} rotAmt={5} phase={560} opacity={0.42} blur={70} />
+
+      {/* soft cool glow for depth */}
+      <div
+        style={{
+          position: "absolute",
+          width: 760,
+          height: 760,
+          left: 1240,
+          top: 600,
+          borderRadius: "50%",
+          background: `radial-gradient(circle at 50% 50%, ${COLORS.cyan} 0%, transparent 66%)`,
+          filter: "blur(100px)",
+          opacity: 0.18,
+        }}
+      />
 
       {/* fine grain */}
       <AbsoluteFill style={{ opacity: 0.05, mixBlendMode: "overlay" }}>
@@ -62,7 +85,7 @@ export const Background: React.FC = () => {
       <AbsoluteFill
         style={{
           background:
-            "radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,0.45) 100%)",
+            "radial-gradient(125% 95% at 50% 45%, transparent 52%, rgba(0,0,0,0.5) 100%)",
         }}
       />
     </AbsoluteFill>
