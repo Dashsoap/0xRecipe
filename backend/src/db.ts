@@ -66,8 +66,13 @@ export interface RecipeRow {
 const PLACEHOLDER_CREATOR_ADDRESS =
   "0x000000000000000000000000000000000000dEaD";
 
-/** Decimal-string price used only to seed a fresh DB; overridable later. */
-const DEFAULT_PRICE_USDC = "0.05";
+/**
+ * Decimal-string price used only to seed a fresh DB; overridable at runtime via
+ * recipe-admin without a restart. $1.00 is the D6-justified price: measured
+ * upstream cost is ~$0.39 per fusion call (panel + judge through the gateway),
+ * and price must be >= 2x cost (here ~2.6x). See backend/scripts/measure-cost.ts.
+ */
+const DEFAULT_PRICE_USDC = "1.00";
 
 /** Stable id of the demo recipe seeded on a fresh database. */
 export const SEED_RECIPE_ID = "legal-reviewer-v1";
