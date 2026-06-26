@@ -58,10 +58,25 @@ function keyForChannel(channel: Channel): string {
   return config.llmGatewayKey as string;
 }
 
+/**
+ * Per-call gateway timeout (ms). A hung/slow upstream socket is cut here rather
+ * than blocking a paid call on the SDK's 10-minute default. The SDK already
+ * retries transient failures (connection errors, 408/409/429, >=500) and
+ * timeouts up to `maxRetries` with backoff — that is the resilience layer for a
+ * flaky gateway. Cross-channel fallback is intentionally NOT done: the shipped
+ * recipe maps each model to a single channel, so there is no same-model target
+ * on the other channel to fall back to (left to a future multi-channel recipe).
+ */
+const GATEWAY_TIMEOUT_MS = 45_000;
+/** Bounded retries on transient (connection/408/409/429/5xx) and timeout failures. */
+const GATEWAY_MAX_RETRIES = 2;
+
 function clientForChannel(channel: Channel): OpenAI {
   return new OpenAI({
     baseURL: config.llmGatewayUrl,
     apiKey: keyForChannel(channel),
+    timeout: GATEWAY_TIMEOUT_MS,
+    maxRetries: GATEWAY_MAX_RETRIES,
   });
 }
 
@@ -97,9 +112,9 @@ export async function callModel(
   const completion = await client.chat.completions.create({ ...base, stream: false });
   const content = completion.choices[0]?.message?.content;
   if (content == null) {
-    throw new Error(
-      `Model "${params.model}" returned no content via ${labelForChannel(params.channel)}.`,
-    );
+    // User-safe message only: never interpolate the raw model id — this Error
+    // reaches the caller via the route's error path. The model id goes to logs.
+    throw new Error(`The ${labelForChannel(params.channel)} returned no content.`);
   }
   return content;
 }

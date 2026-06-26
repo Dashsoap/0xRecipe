@@ -13,7 +13,7 @@
 
 ### 链与浏览器
 - **Injective EVM testnet**:chainId `1439`,CAIP-2 `eip155:1439`
-- RPC `https://k8s.testnet.json-rpc.injective.network/`(公共节点有 per-IP 限频;频繁部署备 thirdweb `https://1439.rpc.thirdweb.com` 或 PublicNode)
+- RPC:**优先 thirdweb `https://1439.rpc.thirdweb.com`**(公共 k8s 节点 `https://k8s.testnet.json-rpc.injective.network/` 有 per-IP 限频,且实测其 `eth_getTransactionReceipt` 不可靠——交易已上块仍返回 not found;PublicNode 备用)
 - WS `wss://k8s.testnet.ws.injective.network/`;浏览器 `https://testnet.blockscout.injective.network`
 - gas token **INJ**,faucet `https://testnet.faucet.injective.network/`(每地址 24h 一次 → 预充 2-3 个地址)
 
@@ -33,14 +33,14 @@
 - `@injectivelabs/x402` alpha(0.0.1,源码 404):内置 1439 网络配置 + EIP-3009 签名/验签 helper(version "2")→ **复用它的签名原语**,facilitator 角色已大幅缩小(见 §1.5)
 
 ### 模型来源 = 统一 OpenAI 兼容网关(已实测),配方 = 模型 × 渠道 × 价格档
-- **网关已验证**:base `https://537-ai.net/v1`(OpenAI 兼容),一个 `base_url` + 一个 key 调用,后端**不直接接官方 SDK**。实测(2026-06-25):
+- **网关已验证**:base `<OpenAI 兼容网关 base_url,放 .env、不入库>`,一个 `base_url` + 一个 key 调用,后端**不直接接官方 SDK**。实测(2026-06-25):
   - ✅ key 有效;✅ 推理通;✅ **`json_schema` strict 透传**(gpt-5.5 返回严格符合 schema 的 JSON → judge JSON 硬保证);✅ **streaming SSE 透传**(标准 `chat.completion.chunk`)
 - **渠道(channel)是一等概念**:同一模型可由多渠道供给、**不同价格/质量**(new-api 式)。已验证两条渠道(同网关、不同 key):
   - `标准渠道`(`LLM_GATEWAY_KEY`):72 模型,gpt/claude/gemini 混合源
-  - `纯血渠道`(`LLM_GATEWAY_KEY_PURE`):9 个 claude,官方源(质量高、价更贵)
+  - `官方源渠道`(`LLM_GATEWAY_KEY_PURE`):9 个 claude,官方源(质量高、价更贵)
   - key 在 `~/0xRecipe/.env`(gitignored,**绝不进 repo / 不下发 agent**)
 - **配方(recipe)= 任意 N 个 (模型,渠道) 做 panel + 1 个做 judge**,创作者按所选渠道成本自主定价(D6:价 ≥ 2× 上游成本,**按渠道算**)。把「同模型多源不同价」做成配方市场核心卖点。
-- **demo 配方**:LegalReviewer ≤3 panel(如 gpt-5.5 标准 + claude-opus-4-8 纯血 + 1 个)+ gpt-5.5 judge;一镜到底控延迟/成本,panel ≤3。
+- **demo 配方**:LegalReviewer ≤3 panel(如 gpt-5.5 标准 + claude-opus-4-8 官方源 + 1 个)+ gpt-5.5 judge;一镜到底控延迟/成本,panel ≤3。
 - ⚠️ **用户可见层只说质量档**(如「官方源 / 标准源」),**绝不出现**网关产品名、「纯血/逆向」这类内部词(CLAUDE.md 母规则)。
 - ⚠️ 残留待验:judge 若改用 Claude-via-网关,需另测 Claude 的 json_schema 透传(当前 judge=gpt-5.5 已验,不阻塞)。
 
@@ -76,7 +76,7 @@
   - `charge(address agent, uint256 amount, address creator)` **onlyBackend**:CEI — `require(balances[agent] >= amount)`;`balances[agent] -= amount`;`usdc.transfer(splitter, amount)`;`splitter.distribute(creator)`;emit Charged + AuditEvent。**一笔原子 tx**,后端付 INJ gas。
   - `withdraw(uint256 amount)`:`balances[msg.sender] -= amount`;转回 agent。随时取回未花余额。
   - `balanceOf(address) view`;ReentrancyGuard + CEI;onlyBackend = 部署时授权的后端热钱包。
-- **`FusionPayoutSplitter.sol`(不变)**:`distribute(creator)` 读自身余额按 80/20(`800000/200000` over `1e6`,floor,0 余额不 revert,ReentrancyGuard),由 `AgentEscrow.charge()` 调用。
+- **`FusionPayoutSplitter.sol`**:`distribute(creator)` 读自身余额按 20/80 拆(creator `200000` / platform `800000` over `1e6`,即 `CREATOR_BPS=200000`、`platformCut = bal - creatorCut` 自动为 80%,floor,0 余额不 revert,ReentrancyGuard),由 `AgentEscrow.charge()` 调用。**分账在 gross(agent 付的全价)上拆:创作者 20% 返佣、不承担成本;平台 80%,从这 80% 里垫付上游算力/API 成本。链上不放成本,只按 gross 拆 20/80。**
 
 ### 每次调用的凭证(voucher,热路径)
 - agent 签 EIP-712 voucher `{agent, recipeId, maxPrice, nonce, expiry}`,放进 `PAYMENT-SIGNATURE` header。
@@ -96,14 +96,14 @@
 4. 跑 Fusion:并行 gpt-5.5 + claude-sonnet-4-6 → gpt-5.5 judge(strict json)
    ← 真金白银花在这,但 step 2 已确认链上锁定余额存在
 5a. 失败:释放 hold,不调 charge();agent 保留 100% 余额;系统级错误气泡(A.4 绝不伪造 LLM 输出)
-5b. 成功:escrow.charge(agent, price, creator) — 一笔原子 tx:扣费 + 80/20 链上强制分账
+5b. 成功:escrow.charge(agent, price, creator) — 一笔原子 tx:扣费 + 20/80 链上强制分账(creator 20% / platform 80%)
 6. 返回:释放 hold;SSE 广播 settlement(agent/creator/amount/tx hash);返回 FusionResult + tx hash
 7. 取回(随时):escrow.withdraw(amount) 拿回未花余额
 ```
 
 ### 关键澄清(诚实定位,防被评委戳穿)
 - **这把 x402 移出了"每调一笔链上结算"**:热路径是 off-chain voucher + 延迟到 escrow 的批量结算 —— 这正是 x402 **batch-settlement / capital-backed escrow** 模式(是 x402 的正式 scheme,不是脱离 x402)。存款仍是一次真实的 EIP-3009 gasless 授权。pitch 话术统一为「预存一次 + 按调用扣费 + 链上强制分账」,**不要**说「每次调用一笔链上 x402 结算」。
-- **80/20 分账时点**:demo 用**每调用即分**(`charge()` 内一笔原子完成,创作者收入 toast 每调一跳,视觉最好);高频场景的批量分账(在 withdraw/结算时一次拆,省 gas)留 V1。
+- **20/80 分账时点**:demo 用**每调用即分**(`charge()` 内一笔原子完成,创作者 20% 返佣 toast 每调一跳,视觉最好);高频场景的批量分账(在 withdraw/结算时一次拆,省 gas)留 V1。
 - **「预算墙」demo**:存刚好够 2 次的额度 → 第 3 次 `balanceOf < price` → 403。**escrow 余额即预算**(可省掉原 D14 的内存 budget Map;要策略上限再叠一个)。
 - **托管信任**:escrow 在 deposit~withdraw 间托管 agent 资金,`onlyBackend` key 泄漏的影响面 = 总托管额。缓解:每笔 `Charged` 事件链上可审计、固定单价、V1 把 voucher 上链(charge 校验 voucher 签名)做信任最小化。
 
@@ -126,15 +126,15 @@
 **Stream A(人类)**:环境 + `depositFor`/`receiveWithAuthorization` spike + deposit/withdraw 跑通
 **Stream B(子 agent)**:`AgentEscrow.sol` + `FusionPayoutSplitter.sol`(Solidity 0.8.28,evm cancun)
 - AgentEscrow:`depositFor` / `charge`(onlyBackend) / `withdraw` / `balanceOf`,接口见 §1.5;ReentrancyGuard + CEI
-- Splitter:`distribute(creator)` 80/20(不变);`AuditEvent` + `emitAudit`
+- Splitter:`distribute(creator)` 20/80(creator `CREATOR_BPS=200000` / platform `800000` over `1e6`);`AuditEvent` + `emitAudit`
 - Foundry 测试:存款记账到 from、charge 扣费+分账精度、0 余额不 revert、withdraw、重入防护、onlyBackend 鉴权
 - **Day 1 不部署**(spike 确认后 Day 2 部署)
 **Stream C(子 agent)**:Next.js 15 + shadcn + wagmi/viem(custom chain 1439);三栏空版型 + `useEventStream`(假数据)
 
 ### Stage 2 — Day 2:部署 + Fusion 引擎 + **curl 端到端** + 前端
-**Goal**:`curl` 跑通:deposit 一次 → 带 voucher 调用 → solvency check → 跑 Fusion → `charge()` 原子扣费+80/20 → 返回 `FusionResult`+tx hash;前端三栏 + SSE 通。
+**Goal**:`curl` 跑通:deposit 一次 → 带 voucher 调用 → solvency check → 跑 Fusion → `charge()` 原子扣费+20/80 → 返回 `FusionResult`+tx hash;前端三栏 + SSE 通。
 **Success Criteria**:
-- [ ] AgentEscrow + Splitter 部署到 1439,地址进 `.env`;手动测:deposit $0.10 → `charge($0.05, creator)` → creator $0.04 / platform $0.01 / escrow 余 $0.05
+- [ ] AgentEscrow + Splitter 部署到 1439,地址进 `.env`;手动测:deposit $0.10 → `charge($0.05, creator)` → creator $0.01(20%) / platform $0.04(80%) / escrow 余 $0.05
 - [ ] **共享类型 `FusionResult` 定稿**(C6),三方 import
 - [ ] 后端按 §1.5 时序:验 voucher → solvency(读链上余额)→ Fusion → 成功才 `charge()`;失败诚实错误态(A.4)
 - [ ] **预算墙 = escrow 余额**:deposit 只够 2 次,第 3 次 `balanceOf < price` → 403
@@ -158,7 +158,7 @@
 **Success Criteria**:
 - [ ] demo 连跑 3 次全成功;UI polish;全程录制机 localhost(iframe/SSE 提前 Day 2 验过)
 - [ ] 3 分钟一镜到底;0:20-0:50 改「展示 hard-coded recipe + 未来开放上架」
-- [ ] Pitch 10 页:第 7 页用 Day 2 实算成本;架构图/话术统一「预存一次 + 按调用扣费 + **链上强制原子分账**」,**不说**「每调一笔链上结算」
+- [ ] Pitch 10 页:第 7 页用 Day 2 实算成本 + gross 20/80 拆账叙事(平台主导运营、从 80% 里垫付上游算力/API 成本;创作者 20% 返佣、不担成本;平台净利 = 80%×价 − API 成本);架构图/话术统一「预存一次 + 按调用扣费 + **链上强制原子分账(creator 20% / platform 80%)**」,**不说**「每调一笔链上结算」
 - [ ] README:定位 + demo 链接 + local quickstart + limitations + V1 路线图(token 计量 / voucher 上链 / 多配方)
 
 ---
@@ -166,17 +166,17 @@
 ## 3. 环境变量清单(后端)
 
 ```
-RPC_URL                 = https://k8s.testnet.json-rpc.injective.network/
+RPC_URL                 = https://1439.rpc.thirdweb.com   # thirdweb 为主:k8s 公共节点 receipt 不可靠
 CHAIN_ID                = 1439
 USDC_ADDRESS            = 0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d
-AGENT_ESCROW_ADDRESS    = <Day 2 部署后填>
-FUSION_SPLITTER_ADDRESS = <Day 2 部署后填>
+AGENT_ESCROW_ADDRESS    = <部署脚本自动写入;见 contracts/deployments/injective-testnet-1439.json>
+FUSION_SPLITTER_ADDRESS = <部署脚本自动写入;同上>
 PLATFORM_ADDR           = <平台收款地址>
 HARDCODED_CREATOR_ADDR  = <创作者测试钱包>
-BACKEND_PRIVATE_KEY     = <后端热钱包:充 INJ;deposit relayer + charge() onlyBackend 签名>
-LLM_GATEWAY_URL         = https://537-ai.net/v1   # OpenAI 兼容,已实测
+BACKEND_PRIVATE_KEY     = <后端热钱包:充 INJ;deposit relayer + charge() onlyBackend 签名>  # 现用 MNEMONIC 派生 index0 代替
+LLM_GATEWAY_URL         = <OpenAI 兼容网关 base_url>   # 放 .env、不入库;已实测透传 json_schema/SSE
 LLM_GATEWAY_KEY         = <标准渠道 key,72 模型;在 .env,绝不进 repo / 不下发 agent>
-LLM_GATEWAY_KEY_PURE    = <纯血 Claude 渠道 key,9 个 claude 官方源;在 .env>
+LLM_GATEWAY_KEY_PURE    = <官方源 Claude 渠道 key,9 个 claude 官方源;在 .env>
 RECIPE_PRICE_USDC       = <Day 2 按 D6 实算后定>
 VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 ```
@@ -198,7 +198,7 @@ VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 
 | ID | 风险 | 影响 | 缓解 |
 |---|---|---|---|
-| **R1** | `receiveWithAuthorization` → 合约存款记账是唯一未验证原语 | Day 1 阻塞 | Day 1 第一件事专测此路径(含确认 `transferWithAuthorization`→合约 不记账的坑) |
+| **R1** | `receiveWithAuthorization` → 合约存款记账是唯一未验证原语 | ✅ **已关闭** | 已链上验证(testnet 1439):agent 签 EIP-3009 → 后端 relay `depositFor` 记账到签名者 → `charge` 扣费 + 20/80 分账全通过(`backend/scripts/spike-deposit-charge.mjs`) |
 | **R2** | `@injectivelabs/x402` alpha(0.0.1,源码 404) | 集成不确定 | pin 死版本,只取其 EIP-3009 签名原语;读 node_modules 确认 API |
 | **R3** | escrow 托管 agent 资金,`onlyBackend` key 泄漏影响面=总托管额 | 安全 | 每笔 Charged 事件可审计;固定单价;V1 voucher 上链 |
 | **R4** | 仅凭地址扣费可被冒充 | 安全 | C10:每调 voucher 验签;脚本 demo 走捷径要标注 |
@@ -217,5 +217,5 @@ VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 
 **本文件随进度更新 `Status`。**
 ```
-状态:Stage 1 未开始 / Stage 2 未开始 / Stage 3 未开始 / Stage 4 未开始
+状态:Stage 1 ✅ 完成(合约+测试+脚手架,forge test 8/8) / Stage 2 🚧 进行中(✅ 合约部署 testnet 1439 + R1 链上验证 + .env 配置;分账已定 创作者 20% / 平台 80%;待 重部署 20/80 合约 + 后端接真网关 + curl 端到端) / Stage 3 未开始 / Stage 4 未开始
 ```

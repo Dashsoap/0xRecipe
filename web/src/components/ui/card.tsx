@@ -10,23 +10,37 @@ import { cn } from "@/lib/utils";
  * The outer <div> is the bezel shell (translucent + hairline ring + 1.5 pad);
  * an inner core carries the dark surface, inset highlight and content radius.
  */
-const Card = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, children, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "rounded-squircle bg-white/[0.03] p-1.5 ring-1 ring-white/10 transition-shadow duration-500 ease-spring hover:shadow-glow-cyan",
-      className,
-    )}
-    {...props}
-  >
-    <div className="h-full rounded-squircle-inner bg-ink-panel text-card-foreground shadow-inset-hi">
-      {children}
+type CardGlow = "none" | "cyan" | "violet" | "emerald";
+const CARD_GLOW: Record<CardGlow, string> = {
+  none: "hover:ring-white/20",
+  cyan: "hover:shadow-glow-cyan",
+  violet: "hover:shadow-glow-violet",
+  emerald: "hover:shadow-glow-emerald",
+};
+
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Hover glow accent. Defaults to a neutral ring so the generic Card stays
+   *  reusable in any accent context; pass an accent only for a focal card. */
+  glow?: CardGlow;
+}
+
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, children, glow = "none", ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn(
+        "rounded-squircle bg-white/[0.03] p-1.5 ring-1 ring-white/10 transition-all duration-500 ease-spring",
+        CARD_GLOW[glow],
+        className,
+      )}
+      {...props}
+    >
+      <div className="h-full rounded-squircle-inner bg-ink-panel text-card-foreground shadow-inset-hi">
+        {children}
+      </div>
     </div>
-  </div>
-));
+  ),
+);
 Card.displayName = "Card";
 
 const CardHeader = React.forwardRef<

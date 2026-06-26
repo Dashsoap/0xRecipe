@@ -5,26 +5,32 @@ import {IERC20} from "./interfaces/IERC20.sol";
 import {ReentrancyGuard} from "./utils/ReentrancyGuard.sol";
 
 /// @title FusionPayoutSplitter
-/// @notice Splits whatever USDC balance it currently holds 80/20 between a creator
+/// @notice Splits whatever USDC balance it currently holds 20/80 between a creator
 ///         and the platform, then pays both out in the same call.
 /// @dev Called atomically from AgentEscrow.charge(): the escrow transfers `amount`
 ///      here, then immediately calls distribute(creator). Reading the live balance
 ///      (rather than trusting a passed-in amount) keeps the split self-contained and
 ///      sweeps any stray dust on each distribution.
 ///
+///      The split is taken on the gross amount the agent paid: the creator (recipe
+///      publisher) earns 20% as a referral cut for publishing the recipe, while the
+///      platform keeps the remaining 80%. The platform bears the upstream compute/API
+///      cost out of its own 80% — the creator publishes only and carries no cost —
+///      so the on-chain split stays a simple gross 20/80 and never touches cost.
+///
 ///      Split math uses basis-points-of-a-million for 6-decimal-USDC precision:
-///      creatorCut = bal * 800000 / 1000000 (floor), platformCut = bal - creatorCut.
+///      creatorCut = bal * 200000 / 1000000 (floor), platformCut = bal - creatorCut.
 ///      A zero balance is a no-op (returns without reverting) so an empty distribute
 ///      never blocks the caller.
 contract FusionPayoutSplitter is ReentrancyGuard {
-    /// @notice Creator share in CREATOR_BPS/DENOM terms (800000/1000000 = 80%).
-    uint256 public constant CREATOR_BPS = 800000;
+    /// @notice Creator share in CREATOR_BPS/DENOM terms (200000/1000000 = 20%).
+    uint256 public constant CREATOR_BPS = 200000;
     /// @notice Denominator for the split (1e6, matching USDC's 6 decimals granularity).
     uint256 public constant DENOM = 1000000;
 
     /// @notice The USDC (ERC-20) token this splitter pays out.
     IERC20 public immutable usdc;
-    /// @notice The platform's payout address (receives the 20% remainder).
+    /// @notice The platform's payout address (receives the 80% remainder).
     address public immutable platform;
 
     /// @notice Emitted on every non-zero distribution.
@@ -40,8 +46,8 @@ contract FusionPayoutSplitter is ReentrancyGuard {
         platform = _platform;
     }
 
-    /// @notice Split this contract's current USDC balance 80/20 to creator/platform.
-    /// @param creator The creator address receiving the 80% share.
+    /// @notice Split this contract's current USDC balance 20/80 to creator/platform.
+    /// @param creator The creator address receiving the 20% share.
     /// @dev Checks-effects-interactions: balance read first, no mutable state to set,
     ///      then external transfers last. Zero balance returns early (no revert).
     function distribute(address creator) external nonReentrant {

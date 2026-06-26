@@ -15,7 +15,7 @@
 | # | 領域 | 決策 |
 |---|---|---|
 | D1 | 合約形態 | `FusionPayoutSplitter` + `AgentBudget`（極薄合約） |
-| D2 | 分賬比例 | 固定 80/20（創作者 80%、平台 20%） |
+| D2 | 分賬比例 | 固定 20/80（創作者 20% 返佣、平台 80%）。在 GROSS（agent 付的全價）上拆：創作者只發布配方、不承擔成本，拿調用額 20% 返佣；平台拿 80%，並從這 80% 裡墊付上游算力/API 成本。鏈上不放成本，只按 gross 拆 20/80。 |
 | D3 | Agent 身份 | EOA 錢包 + 後端護欄判斷 + 鏈上 audit event（**不做 ERC-4337**） |
 | D4 | Fusion 引擎 | **自建** panel(≤3) + judge，judge 輸出結構化 JSON（consensus/contradictions/blind spots） |
 | D5 | 模型支援 | Panel：GPT + Claude；Judge：固定選單 |
@@ -64,7 +64,7 @@
                        │  Injective EVM testnet              │
                        │  · USDC TransferWithAuthorization   │
                        │  · FusionPayoutSplitter.distribute()│
-                       │    → 80% creator / 20% platform     │
+                       │    → 20% creator / 80% platform     │
                        │  · emit AuditEvent (budget log)     │
                        └─────────────────────────────────────┘
 ```
@@ -105,7 +105,7 @@
 #### Stream B（子 agent 1）：Splitter 合約
 
 - [ ] **Task 1.5 寫 `FusionPayoutSplitter.sol`**（spike 沒成功也能先寫）
-  - 一個 `distribute(address creator)` 函式，把當前 USDC 餘額按 80/20 拆給 creator 和 platform
+  - 一個 `distribute(address creator)` 函式，把當前 USDC 餘額按 20/80 拆給 creator 和 platform（創作者 20% 返佣、平台 80%）
   - 一個 `AuditEvent(address agent, uint256 amount, string reason)` 事件，給後端護欄記錄用
   - **不部署**（等 Day 2 spike 成功確認鏈再部署）
   - 寫 Foundry 測試覆蓋分賬正確性
@@ -132,7 +132,7 @@
 - [ ] **Task 2.1 部署 Splitter 到 Day 1 確認可用的鏈**
   - 用 Foundry script 部署
   - 把合約地址寫進後端 `.env`
-  - 手動測試：往 Splitter 轉 $0.05 USDC → 呼叫 `distribute(creator)` → 確認 creator 拿 $0.04、platform 拿 $0.01
+  - 手動測試：往 Splitter 轉 $0.05 USDC → 呼叫 `distribute(creator)` → 確認 creator 拿 $0.01（20%）、platform 拿 $0.04（80%）
 
 #### Stream B（子 agent 1）：Backend Fusion 引擎
 
@@ -166,7 +166,7 @@
 
 - [ ] **Task 2.3 寫 Demo View 三欄畫面**
   - 左欄「Agent 視角」：錢包地址、餘額、預算條、最近 N 筆 call 列表（時間、模型、扣款、tx hash 點開連到區塊瀏覽器）
-  - 中欄「Creator 視角」：creator 錢包地址、累計收入、本次分賬 highlight 動畫（$0.05 → +$0.04 跳出 toast）
+  - 中欄「Creator 視角」：creator 錢包地址、累計收入、本次分賬 highlight 動畫（$0.05 → +$0.01 跳出 toast，創作者 20% 返佣）
   - 右欄「區塊瀏覽器 iframe」：當前最新 tx 自動跳轉
   - **SSE 客戶端**：訂閱後端 `/events/stream`，收到事件即時更新左+中欄
 
@@ -241,7 +241,7 @@
   - 4: Demo（影片連結 + 區塊瀏覽器截圖）
   - 5: 技術架構圖
   - 6: 競品差異化（vs OpenRouter Fusion / tx402 / Daydreams Router）
-  - 7: 商業模型（80/20 + 平台垫付差價）
+  - 7: 商業模型（gross 20/80 拆賬：平台主導運營、從 80% 裡墊付上游算力/API 成本，創作者 20% 返佣、不擔成本。平台淨利 = 80%×價 − API 成本）
   - 8: 路線圖（V1 加創作者發布表單 / 排行榜 / stake / AA 護欄）
   - 9: 為什麼選 Injective（650ms 結算 + 生態空白）
   - 10: Ask / Contact
@@ -277,13 +277,15 @@
 
 ```
 你是 0xRecipe 項目的合約工程師。0xRecipe 是 Injective EVM 上的 Fusion 模型市場，
-agent 用 x402 付款調用 Fusion 模型，付款需要原子分賬給創作者(80%)和平台(20%)。
+agent 用 x402 付款調用 Fusion 模型，付款需要原子分賬給創作者(20%)和平台(80%)。
+分賬在 GROSS（agent 付的全價）上拆：創作者只發布配方、不承擔成本，拿調用額 20% 返佣；
+平台拿 80%，並從這 80% 裡墊付上游算力/API 成本（鏈上不放成本，只按 gross 拆 20/80）。
 
 請完成：
 1. 在 contracts/ 寫一個 FusionPayoutSplitter.sol
    - Solidity 0.8.20+
    - 接收 USDC（ERC-20 假設地址從 constructor 傳入）
-   - 一個函式 distribute(address creator)：把當前合約持有的 USDC 餘額按 80/20 分給 creator 和 platform（platform 地址也從 constructor 設定）
+   - 一個函式 distribute(address creator)：把當前合約持有的 USDC 餘額按 20/80 分給 creator 和 platform（創作者 20%、平台 80%；platform 地址也從 constructor 設定）。合約常量 CREATOR_BPS=200000 over 1e6（= 創作者 20%），platformCut = bal - creatorCut（自動為 80%）
    - 一個事件 AuditEvent(address indexed agent, uint256 amount, string reason)，供後端護欄記錄用，提供 emitAudit(...) 函式
    - 安全考量：reentrancy guard、checks-effects-interactions
 2. Foundry 測試覆蓋：

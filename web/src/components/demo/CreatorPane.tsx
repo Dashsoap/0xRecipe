@@ -1,7 +1,8 @@
 "use client";
 
-import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
+
+import { useMounted } from "@/hooks/useMounted";
 
 import { Badge } from "@/components/ui/badge";
 import { GlassPanel } from "@/components/ui/glass-panel";
@@ -104,11 +105,8 @@ function SplitBlock({
   hasLatest: boolean;
 }) {
   const reduce = useReducedMotion();
-  // Defer the reduced-motion decision until after mount so the SSR HTML and the
-  // first client render share the same `initial` styles (no hydration mismatch).
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
-  const reducedNow = mounted && reduce;
+  // Defer the reduced-motion decision until after mount (no hydration mismatch).
+  const reducedNow = useMounted() && reduce;
 
   return (
     <div className="relative mt-auto overflow-hidden rounded-2xl bg-emerald-soft p-4 ring-1 ring-emerald/25">

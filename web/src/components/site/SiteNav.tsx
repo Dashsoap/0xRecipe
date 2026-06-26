@@ -18,11 +18,11 @@ import { cn } from "@/lib/utils";
 
 const SPRING = [0.32, 0.72, 0, 1] as const;
 
+// Anchors must exist on the page: #top (hero), #how (funds-flow), #demo (live).
 const LINKS = [
   { label: "产品", href: "#top" },
   { label: "原理", href: "#how" },
   { label: "Demo", href: "#demo" },
-  { label: "文档", href: "#docs" },
 ] as const;
 
 export function SiteNav() {

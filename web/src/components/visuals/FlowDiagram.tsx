@@ -3,6 +3,8 @@
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
+import { useMounted } from "@/hooks/useMounted";
+
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,7 +12,7 @@ import { cn } from "@/lib/utils";
  *
  * Tells the on-chain payment story in one glance: a stablecoin payment leaves
  * the agent wallet, lands in a pre-paid escrow, and the splitter atomically
- * forks it into two streams — most to the creator, the rest to the platform.
+ * forks it into two streams — most to the platform, the rest to the creator.
  *
  * Everything (node chips AND connector rails) lives inside ONE SVG viewBox so
  * the two share a single coordinate system. Node chips render as
@@ -79,17 +81,17 @@ const NODES = {
     cx: 830,
     cy: 92,
     tone: "emerald",
-    eyebrow: "80%",
+    eyebrow: "20%",
     title: "创作者",
-    sub: "模型 / 配方收益",
+    sub: "配方调用返佣",
   },
   platform: {
     cx: 830,
     cy: 268,
     tone: "violet",
-    eyebrow: "20%",
+    eyebrow: "80%",
     title: "平台",
-    sub: "网络与结算",
+    sub: "结算与算力成本",
   },
 } satisfies Record<string, NodeDef>;
 
@@ -141,8 +143,7 @@ export function FlowDiagram({ className }: { className?: string }) {
   // tree must not gain/lose the animated layer between them), the reduced-motion
   // decision is deferred until after mount. Before mount we render exactly what
   // the server did: the animated layer present, no node pulsing yet.
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
 
   // Static once mounted under reduced motion; animated otherwise.
   const animate = mounted && !reduce;
@@ -157,7 +158,7 @@ export function FlowDiagram({ className }: { className?: string }) {
     <div
       className={cn("relative w-full", className)}
       role="img"
-      aria-label="资金流动示意：智能体钱包付款，进入预付托管，由合约原子分账，八成给创作者、两成给平台"
+      aria-label="资金流动示意：智能体钱包付款，进入预付托管，由合约原子分账，两成返给创作者、八成归平台"
     >
       <svg
         viewBox={`0 0 ${VB_W} ${VB_H}`}
@@ -194,7 +195,7 @@ export function FlowDiagram({ className }: { className?: string }) {
           <path d={PATHS.walletEscrow} />
           <path d={PATHS.escrowSplitter} />
         </g>
-        {/* Tinted split streams: cyan = 80% to creator, violet = 20% platform. */}
+        {/* Tinted split streams: cyan = 20% to creator, violet = 80% platform. */}
         <path
           d={PATHS.splitterCreator}
           stroke="rgba(34,211,238,0.28)"
