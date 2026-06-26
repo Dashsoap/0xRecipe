@@ -105,13 +105,16 @@ const SEED_JUDGE: JudgeSpec = {
   model: "gpt-5.5",
   channel: "standard",
   instruction:
-    "You are given several independent reviews of the same contract, each written " +
-    "from a different perspective. Synthesize them into a single structured result. " +
-    "Identify points the reviewers agree on, direct contradictions between clauses " +
-    "or between reviewers, areas only partially covered, unique insights raised by a " +
-    "single reviewer, and blind spots none of them addressed. Then write one clear, " +
-    "actionable summary for the reader. Ground every point in the contract text; do " +
-    "not add facts that are not supported by the reviews or the document.",
+    "You are given several independent expert reviews of the same contract. Produce " +
+    "one consolidated structured result that is strictly better than any single " +
+    "review. For `contradictions`: take the UNION — list EVERY distinct clause-level " +
+    "conflict raised by ANY reviewer that is genuinely supported by the contract " +
+    "text. Merge duplicates that describe the same conflict, but NEVER drop a real " +
+    "conflict just because only one reviewer raised it. At the same time, EXCLUDE any " +
+    "asserted conflict the document does not actually support (filter out a single " +
+    "reviewer's false positives). Then fill consensus, partial_coverage, " +
+    "unique_insights, blind_spots, and a clear, actionable synthesized_answer. Ground " +
+    "every point in the contract text; never invent facts.",
 };
 
 // --- Connection + schema (run once on module init) ---------------------------

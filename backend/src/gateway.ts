@@ -67,7 +67,7 @@ function keyForChannel(channel: Channel): string {
  * recipe maps each model to a single channel, so there is no same-model target
  * on the other channel to fall back to (left to a future multi-channel recipe).
  */
-const GATEWAY_TIMEOUT_MS = 45_000;
+const GATEWAY_TIMEOUT_MS = Number(process.env.LLM_GATEWAY_TIMEOUT_MS ?? 45_000);
 /** Bounded retries on transient (connection/408/409/429/5xx) and timeout failures. */
 const GATEWAY_MAX_RETRIES = 2;
 
