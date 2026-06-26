@@ -13,6 +13,12 @@ cache/
 out/
 broadcast/
 
+# sqlite recipe store — never commit the DB
+data/
+*.db
+*.db-wal
+*.db-shm
+
 # misc
 .DS_Store
 *.log
