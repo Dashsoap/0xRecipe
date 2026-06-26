@@ -275,15 +275,29 @@ function isMissingConfigError(err: unknown): boolean {
 app.post("/v1/deposit", async (c) => {
   // 1. Parse + strictly validate the body. Any malformed field is the agent's
   //    error (400) and is never coerced.
-  let body: DepositBodyWire;
+  let parsedBody: unknown;
   try {
-    body = await c.req.json<DepositBodyWire>();
+    parsedBody = await c.req.json();
   } catch {
     return c.json(
       { error: "invalid_deposit", message: "Request body must be a JSON object." },
       400,
     );
   }
+  // A valid JSON `null` (or an array / primitive) parses without throwing; reject
+  // it explicitly so a non-object body gets an accurate 400 instead of falling
+  // through to a misleading field-level error on a null property access.
+  if (
+    parsedBody === null ||
+    typeof parsedBody !== "object" ||
+    Array.isArray(parsedBody)
+  ) {
+    return c.json(
+      { error: "invalid_deposit", message: "Request body must be a JSON object." },
+      400,
+    );
+  }
+  const body = parsedBody as DepositBodyWire;
 
   let from: Address;
   try {

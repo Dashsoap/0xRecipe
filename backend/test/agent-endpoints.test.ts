@@ -168,6 +168,20 @@ describe("agent self-serve endpoints", () => {
     expect(body.error).toBe("invalid_deposit");
   });
 
+  it("POST /v1/deposit rejects a non-object body (JSON null) with 400", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/v1/deposit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "null", // valid JSON, but not an object
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string; message?: string };
+    expect(body.error).toBe("invalid_deposit");
+    expect(body.message).toBe("Request body must be a JSON object.");
+  });
+
   it("GET /v1/usage/:agent reflects a recorded charge too", async () => {
     const agent = "0x90F79bf6EB2c4f870365E785982E1f101E93b906";
     const creator = "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65";
