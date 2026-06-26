@@ -139,14 +139,20 @@ export interface RelayDepositParams {
   s: Hex;
 }
 
+/** How long to wait for a relayed deposit receipt before treating it as failed (ms). */
+const DEPOSIT_RECEIPT_TIMEOUT_MS = 60_000;
+
 /**
  * Relay a prefund: the backend submits the agent's signed authorization so the
- * agent pays no gas. Records the balance to the signer `from`.
+ * agent pays no gas. Records the balance to the signer `from`. Mirrors charge():
+ * waits for the transaction receipt and requires an on-chain success before
+ * returning, so a resolved call means the deposit is confirmed (not merely
+ * broadcast) and the caller can read an accurate post-deposit balance.
  */
 export async function relayDeposit(params: RelayDepositParams): Promise<Hex> {
   const address = escrowAddress();
   const { walletClient, account } = getBackendWallet();
-  return walletClient.writeContract({
+  const hash = await walletClient.writeContract({
     address,
     abi: AGENT_ESCROW_ABI,
     functionName: "depositFor",
@@ -163,6 +169,18 @@ export async function relayDeposit(params: RelayDepositParams): Promise<Hex> {
     account,
     chain: injectiveTestnet,
   });
+
+  // writeContract resolves on broadcast, NOT on mining. Wait for the receipt and
+  // require an on-chain success so the endpoint returns only once the prefund is
+  // settled — a reverted/dropped deposit must not look confirmed.
+  const receipt = await getPublicClient().waitForTransactionReceipt({
+    hash,
+    timeout: DEPOSIT_RECEIPT_TIMEOUT_MS,
+  });
+  if (receipt.status !== "success") {
+    throw new Error(`Deposit transaction ${hash} reverted on-chain.`);
+  }
+  return hash;
 }
 
 /** How long to wait for a charge tx receipt before treating it as failed (ms). */

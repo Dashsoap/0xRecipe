@@ -15,10 +15,14 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { getAddress, type Address, type Hex } from "viem";
+import { formatUnits, getAddress, type Address, type Hex } from "viem";
 import {
   verifyVoucher,
   injectiveTestnet,
+  CHAIN_ID,
+  USDC_DOMAIN_NAME,
+  USDC_DOMAIN_VERSION,
+  RECEIVE_WITH_AUTHORIZATION_TYPES,
   type PaymentVoucher,
 } from "@0xrecipe/x402";
 import type { FusionResult, SettlementEvent } from "@0xrecipe/shared";
@@ -26,7 +30,8 @@ import { config } from "./config.js";
 import { getRecipe } from "./recipes.js";
 import { runFusion } from "./fusion.js";
 import { reserve, release } from "./solvency.js";
-import { charge } from "./escrow.js";
+import { charge, readBalance, relayDeposit } from "./escrow.js";
+import { insertLedgerEntry, listLedgerByAgent } from "./db.js";
 import { claimNonce, settleNonce, releaseNonce } from "./nonces.js";
 
 const app = new Hono();
@@ -131,6 +136,305 @@ app.get("/health", (c) => {
       standardSource: Boolean(config.llmGatewayKey),
       officialSource: Boolean(config.llmGatewayKeyPure),
     },
+  });
+});
+
+// --- Agent self-serve endpoints (balance / usage / deposit) ------------------
+//
+// These let an AI agent operate the prepaid escrow on its own: check its
+// balance, read its bill/usage log, and prefund — with no human and no external
+// system in the loop. Honest errors only: 400 bad input, 503 chain/config not
+// ready, 502 relay failure. We never fabricate a balance, tx hash, or entry.
+
+/**
+ * Read an agent's prepaid escrow balance. No auth: a balance is public on-chain
+ * data keyed by address, and the agent needs it to decide whether to prefund.
+ */
+app.get("/v1/balance/:agent", async (c) => {
+  let agent: Address;
+  try {
+    agent = getAddress(c.req.param("agent"));
+  } catch {
+    return c.json(
+      {
+        error: "invalid_agent",
+        message: "The agent path segment is not a valid address.",
+      },
+      400,
+    );
+  }
+
+  try {
+    const balance = await readBalance(agent);
+    return c.json({
+      agent,
+      balanceUnits: balance.toString(),
+      balanceUsdc: formatUnits(balance, 6),
+    });
+  } catch (err) {
+    // Read failed, or chain/escrow config is not ready. Honest 503 with a generic
+    // message; the real cause is logged server-side, never returned, and we never
+    // hand back a fabricated balance.
+    console.error("[balance] escrow balance read failed:", err);
+    return c.json(
+      {
+        error: "balance_unavailable",
+        message:
+          "The balance service is temporarily unavailable. Please try again shortly.",
+      },
+      503,
+    );
+  }
+});
+
+/**
+ * An agent's own bill / usage log: every confirmed deposit and settled charge,
+ * newest first. Reads the local ledger only (no chain), so it always responds.
+ */
+app.get("/v1/usage/:agent", (c) => {
+  let agent: Address;
+  try {
+    agent = getAddress(c.req.param("agent"));
+  } catch {
+    return c.json(
+      {
+        error: "invalid_agent",
+        message: "The agent path segment is not a valid address.",
+      },
+      400,
+    );
+  }
+  return c.json({ agent, entries: listLedgerByAgent(agent.toLowerCase(), 100) });
+});
+
+/**
+ * Everything an agent needs to sign an EIP-3009 ReceiveWithAuthorization that
+ * prefunds the escrow. The agent signs with to=escrowAddress and POSTs the
+ * result to /v1/deposit. 503 until the escrow address is configured — we never
+ * hand back a placeholder contract address.
+ */
+app.get("/v1/deposit/info", (c) => {
+  const escrowAddress = config.agentEscrowAddress;
+  if (!escrowAddress) {
+    return c.json(
+      {
+        error: "deposit_unavailable",
+        message: "Deposits are not available right now. Please try again later.",
+      },
+      503,
+    );
+  }
+  return c.json({
+    chainId: CHAIN_ID,
+    escrowAddress,
+    usdcAddress: config.usdcAddress,
+    domain: {
+      name: USDC_DOMAIN_NAME,
+      version: USDC_DOMAIN_VERSION,
+      chainId: CHAIN_ID,
+      verifyingContract: config.usdcAddress,
+    },
+    primaryType: "ReceiveWithAuthorization",
+    types: RECEIVE_WITH_AUTHORIZATION_TYPES,
+    note:
+      "Sign this ReceiveWithAuthorization with to=escrowAddress, then POST it to /v1/deposit.",
+  });
+});
+
+/** Wire body for POST /v1/deposit (bigint fields as decimal strings). */
+interface DepositBodyWire {
+  from?: unknown;
+  value?: unknown;
+  validAfter?: unknown;
+  validBefore?: unknown;
+  nonce?: unknown;
+  v?: unknown;
+  r?: unknown;
+  s?: unknown;
+}
+
+const HEX_RE = /^0x[0-9a-fA-F]+$/;
+const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
+
+/**
+ * A missing-config error (from requireEnv) is operational — the escrow address
+ * or backend key is not set — so it maps to 503, not the agent's 502.
+ */
+function isMissingConfigError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    err.message.includes("Missing required environment variable")
+  );
+}
+
+/**
+ * Relay an agent's signed EIP-3009 prefund into escrow (the agent pays no gas).
+ * relayDeposit awaits the on-chain receipt, so a 200 here means the deposit is
+ * confirmed; we then record it in the ledger and return the new balance.
+ */
+app.post("/v1/deposit", async (c) => {
+  // 1. Parse + strictly validate the body. Any malformed field is the agent's
+  //    error (400) and is never coerced.
+  let body: DepositBodyWire;
+  try {
+    body = await c.req.json<DepositBodyWire>();
+  } catch {
+    return c.json(
+      { error: "invalid_deposit", message: "Request body must be a JSON object." },
+      400,
+    );
+  }
+
+  let from: Address;
+  try {
+    from = getAddress(body.from as string);
+  } catch {
+    return c.json(
+      { error: "invalid_deposit", message: "Field 'from' is not a valid address." },
+      400,
+    );
+  }
+
+  if (typeof body.nonce !== "string" || !BYTES32_RE.test(body.nonce)) {
+    return c.json(
+      {
+        error: "invalid_deposit",
+        message: "Field 'nonce' must be a 32-byte 0x-hex string.",
+      },
+      400,
+    );
+  }
+  if (typeof body.r !== "string" || !HEX_RE.test(body.r)) {
+    return c.json(
+      { error: "invalid_deposit", message: "Field 'r' must be a 0x-hex string." },
+      400,
+    );
+  }
+  if (typeof body.s !== "string" || !HEX_RE.test(body.s)) {
+    return c.json(
+      { error: "invalid_deposit", message: "Field 's' must be a 0x-hex string." },
+      400,
+    );
+  }
+  if (typeof body.v !== "number" || !Number.isInteger(body.v)) {
+    return c.json(
+      { error: "invalid_deposit", message: "Field 'v' must be an integer." },
+      400,
+    );
+  }
+  if (
+    typeof body.value !== "string" ||
+    typeof body.validAfter !== "string" ||
+    typeof body.validBefore !== "string"
+  ) {
+    return c.json(
+      {
+        error: "invalid_deposit",
+        message:
+          "Fields 'value', 'validAfter', 'validBefore' must be decimal integer strings.",
+      },
+      400,
+    );
+  }
+
+  let value: bigint;
+  let validAfter: bigint;
+  let validBefore: bigint;
+  try {
+    value = BigInt(body.value);
+    validAfter = BigInt(body.validAfter);
+    validBefore = BigInt(body.validBefore);
+  } catch {
+    return c.json(
+      {
+        error: "invalid_deposit",
+        message:
+          "Fields 'value', 'validAfter', 'validBefore' must be decimal integer strings.",
+      },
+      400,
+    );
+  }
+  if (value < 0n || validAfter < 0n || validBefore < 0n) {
+    return c.json(
+      { error: "invalid_deposit", message: "Numeric fields must be non-negative." },
+      400,
+    );
+  }
+
+  // 2. Relay on-chain. relayDeposit awaits the receipt, so a resolved call means
+  //    the deposit is confirmed. Missing escrow/key config -> 503; any other
+  //    relay/chain failure -> 502. The real cause is logged, never returned.
+  let txHash: Hex;
+  try {
+    txHash = await relayDeposit({
+      from,
+      value,
+      validAfter,
+      validBefore,
+      nonce: body.nonce as Hex,
+      v: body.v,
+      r: body.r as Hex,
+      s: body.s as Hex,
+    });
+  } catch (err) {
+    if (isMissingConfigError(err)) {
+      console.error("[deposit] relay unavailable (config not ready):", err);
+      return c.json(
+        {
+          error: "deposit_unavailable",
+          message: "Deposits are not available right now. Please try again later.",
+        },
+        503,
+      );
+    }
+    console.error("[deposit] relay failed:", err);
+    return c.json(
+      {
+        error: "deposit_failed",
+        message: "The deposit could not be submitted. Please try again shortly.",
+      },
+      502,
+    );
+  }
+
+  // 3. The deposit is confirmed on-chain: record it in the ledger BEFORE reading
+  //    the balance, so a confirmed prefund is never lost from the agent's usage
+  //    log even if the follow-up balance read blips.
+  insertLedgerEntry({
+    ts: Date.now(),
+    agent: from,
+    type: "deposit",
+    amountUnits: value.toString(),
+    amountUsdc: formatUnits(value, 6),
+    recipeId: null,
+    counterparty: null,
+    txHash,
+  });
+
+  let balance: bigint;
+  try {
+    balance = await readBalance(from);
+  } catch (err) {
+    // The deposit is confirmed and already recorded; only the display read
+    // failed. Report honestly (with the tx hash) rather than 500 — never a
+    // fabricated balance.
+    console.error("[deposit] post-deposit balance read failed:", err);
+    return c.json(
+      {
+        error: "balance_unavailable",
+        message:
+          "Your deposit was confirmed on-chain, but the updated balance could " +
+          "not be read just now. Check /v1/balance or /v1/usage shortly.",
+        txHash,
+      },
+      503,
+    );
+  }
+
+  return c.json({
+    txHash,
+    balanceUnits: balance.toString(),
+    balanceUsdc: formatUnits(balance, 6),
   });
 });
 
@@ -382,6 +686,19 @@ app.post("/v1/chat/completions", async (c) => {
     ts: Date.now(),
   };
   broadcast(event);
+
+  // Record the settled charge in the agent's ledger so /v1/usage shows real
+  // bills. Same millisecond timestamp as the SettlementEvent we just broadcast.
+  insertLedgerEntry({
+    ts: event.ts,
+    agent,
+    type: "charge",
+    amountUnits: price.toString(),
+    amountUsdc: formatUnits(price, 6),
+    recipeId: recipe.id,
+    counterparty: event.creator,
+    txHash,
+  });
 
   return c.json({ ...result, txHash });
 });

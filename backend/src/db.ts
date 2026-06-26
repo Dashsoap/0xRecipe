@@ -141,6 +141,25 @@ db.exec(`
   );
 `);
 
+// Append-only billing ledger. Every settled charge and confirmed deposit is
+// recorded here so an agent can query its own bill / usage with no human or
+// external system involved. The agent address is stored LOWERCASED so lookups
+// are case-insensitive (callers may pass a checksummed or lowercased address).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ledger (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            INTEGER NOT NULL,
+    agent         TEXT NOT NULL,
+    type          TEXT NOT NULL,
+    amount_units  TEXT NOT NULL,
+    amount_usdc   TEXT NOT NULL,
+    recipe_id     TEXT,
+    counterparty  TEXT,
+    tx_hash       TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_ledger_agent ON ledger(agent);
+`);
+
 // --- Prepared statements -----------------------------------------------------
 
 const RECIPE_COLUMNS =
@@ -165,6 +184,17 @@ const upsertStmt = db.prepare(
 const countStmt = db.prepare("SELECT COUNT(*) AS n FROM recipes");
 const updatePriceStmt = db.prepare(
   "UPDATE recipes SET price_usdc = ? WHERE id = ?",
+);
+
+const insertLedgerStmt = db.prepare(
+  `INSERT INTO ledger
+     (ts, agent, type, amount_units, amount_usdc, recipe_id, counterparty, tx_hash)
+   VALUES
+     (@ts, @agent, @type, @amount_units, @amount_usdc, @recipe_id, @counterparty, @tx_hash)`,
+);
+const selectLedgerByAgentStmt = db.prepare(
+  `SELECT ts, type, amount_units, amount_usdc, recipe_id, counterparty, tx_hash
+   FROM ledger WHERE agent = ? ORDER BY id DESC LIMIT ?`,
 );
 
 // --- Public helpers (synchronous; better-sqlite3 is sync) --------------------
@@ -192,6 +222,85 @@ export function upsertRecipe(row: RecipeRow): void {
 export function updatePrice(id: string, priceUsdc: string): boolean {
   const info = updatePriceStmt.run(priceUsdc, id);
   return info.changes > 0;
+}
+
+// --- Ledger (billing log) ----------------------------------------------------
+
+/** A ledger row records either a settled charge or a confirmed deposit. */
+export type LedgerEntryType = "deposit" | "charge";
+
+/** Shape accepted by {@link insertLedgerEntry}. Agent is lowercased on write. */
+export interface LedgerEntryInput {
+  /** Epoch milliseconds (Date.now()). */
+  ts: number;
+  /** Agent address; stored lowercased for case-insensitive lookup. */
+  agent: string;
+  type: LedgerEntryType;
+  /** Amount in USDC smallest units, as a decimal string (e.g. "50000"). */
+  amountUnits: string;
+  /** Amount in USDC, as a display decimal string (e.g. "0.05"). */
+  amountUsdc: string;
+  /** Recipe id for a charge; null for a deposit. */
+  recipeId: string | null;
+  /** Creator paid for a charge; null for a deposit. */
+  counterparty: string | null;
+  txHash: string;
+}
+
+/** One ledger row as returned to an agent by {@link listLedgerByAgent}. */
+export interface LedgerEntry {
+  ts: number;
+  type: LedgerEntryType;
+  amountUnits: string;
+  amountUsdc: string;
+  recipeId: string | null;
+  counterparty: string | null;
+  txHash: string;
+}
+
+/** Raw ledger row shape (snake_case columns). */
+interface LedgerRow {
+  ts: number;
+  type: string;
+  amount_units: string;
+  amount_usdc: string;
+  recipe_id: string | null;
+  counterparty: string | null;
+  tx_hash: string;
+}
+
+/** Append one entry to the billing ledger. Agent is stored lowercased. */
+export function insertLedgerEntry(entry: LedgerEntryInput): void {
+  insertLedgerStmt.run({
+    ts: entry.ts,
+    agent: entry.agent.toLowerCase(),
+    type: entry.type,
+    amount_units: entry.amountUnits,
+    amount_usdc: entry.amountUsdc,
+    recipe_id: entry.recipeId,
+    counterparty: entry.counterparty,
+    tx_hash: entry.txHash,
+  });
+}
+
+/**
+ * An agent's ledger entries, newest first, capped at `limit`. The caller passes
+ * an already-lowercased address (matching how rows are stored).
+ */
+export function listLedgerByAgent(
+  agentLower: string,
+  limit: number,
+): LedgerEntry[] {
+  const rows = selectLedgerByAgentStmt.all(agentLower, limit) as LedgerRow[];
+  return rows.map((r) => ({
+    ts: r.ts,
+    type: r.type as LedgerEntryType,
+    amountUnits: r.amount_units,
+    amountUsdc: r.amount_usdc,
+    recipeId: r.recipe_id,
+    counterparty: r.counterparty,
+    txHash: r.tx_hash,
+  }));
 }
 
 // --- Seed --------------------------------------------------------------------
