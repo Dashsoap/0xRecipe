@@ -23,6 +23,10 @@ data/
 .DS_Store
 *.log
 
+# internal handoff / docs — NEVER push to the public repo
+HANDOFF.md
+*.handoff.md
+
 # tooling / local (scheduler + workflow scratch, build caches)
 .claude/
 .workflow/
