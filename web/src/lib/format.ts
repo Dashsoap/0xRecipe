@@ -1,6 +1,34 @@
 /** USDC has 6 decimals on Injective EVM testnet. */
 const USDC_DECIMALS = 6;
 
+/** Creator's share of each charge, in basis points (20%). Platform takes 80%. */
+export const CREATOR_SHARE_BPS = 2000n;
+
+/**
+ * Creator's cut of one charge, in USDC base units. Integer math on BigInt so
+ * there is no float drift. Non-numeric input yields "0" rather than throwing.
+ */
+export function creatorShareUnits(amountUnits: string): string {
+  try {
+    return ((BigInt(amountUnits) * CREATOR_SHARE_BPS) / 10000n).toString();
+  } catch {
+    return "0";
+  }
+}
+
+/** Sum a list of base-unit strings into one base-unit string (BigInt). */
+export function sumUnits(values: string[]): string {
+  let total = 0n;
+  for (const v of values) {
+    try {
+      total += BigInt(v);
+    } catch {
+      // Skip malformed entries rather than corrupt the running total.
+    }
+  }
+  return total.toString();
+}
+
 /**
  * Format a USDC base-unit string (6 decimals) as a human dollar amount.
  * e.g. "50000" -> "$0.05". Avoids floating point on the integer part.

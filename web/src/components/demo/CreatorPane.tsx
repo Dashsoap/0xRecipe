@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
+import { ArrowUpRight } from "@phosphor-icons/react";
 
 import { useMounted } from "@/hooks/useMounted";
 
@@ -9,33 +10,38 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 import { Separator } from "@/components/ui/separator";
 import { Beam } from "@/components/visuals/Beam";
 import { GlowOrb } from "@/components/visuals/GlowOrb";
+import { explorerTxUrl } from "@/lib/chain";
 import { formatUsdc, shortenAddress } from "@/lib/format";
 
 // Signature spring curve, shared with the Tailwind `ease-spring` token.
 const SPRING = [0.32, 0.72, 0, 1] as const;
 
 export interface CreatorPaneProps {
-  address: `0x${string}`;
-  /** Cumulative earnings, USDC base units. */
+  /** Latest payout recipient, or null until a settlement arrives. */
+  address: string | null;
+  /** Cumulative creator earnings (20% of every charge), USDC base units. */
   totalEarned: string;
-  /** Most recent payout share, USDC base units. */
+  /** Most recent payout share (20% of the latest charge), USDC base units. */
   latestPayout: string;
+  /** Tx hash of the latest settlement, for the on-chain link + toast key. */
+  latestTxHash: string | null;
   /** Whether a settlement exists to surface as "this split". */
   hasLatest: boolean;
 }
 
 /**
  * Creator pane - the earning side. Double-Bezel glass with an emerald accent:
- * payout address in mono, cumulative income, and a "this split" focal block
- * where the amount fades up with an emerald glow to celebrate an on-chain
- * arrival. The panel rests quiet (hairline ring only); the emerald glow is
- * reserved for the settled split, the one true focal moment here. Empty
- * state stays calm and waits for the next call.
+ * payout address in mono, cumulative income (the creator's 20% across every
+ * settlement), and a "this split" focal block where the latest share fades up
+ * with an emerald glow on each new settlement. The panel rests quiet (hairline
+ * ring only); the emerald glow is reserved for the settled split, the one true
+ * focal moment here. Empty state stays calm and waits for the next call.
  */
 export function CreatorPane({
   address,
   totalEarned,
   latestPayout,
+  latestTxHash,
   hasLatest,
 }: CreatorPaneProps) {
   return (
@@ -70,9 +76,13 @@ export function CreatorPane({
           <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
             收款地址
           </div>
-          <span className="font-mono text-sm text-white/85">
-            {shortenAddress(address)}
-          </span>
+          {address ? (
+            <span className="font-mono text-sm text-white/85">
+              {shortenAddress(address)}
+            </span>
+          ) : (
+            <span className="text-sm text-white/40">等待首次结算</span>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -85,23 +95,31 @@ export function CreatorPane({
             </span>
             <span className="text-xs text-white/40">USDC</span>
           </div>
+          <p className="text-xs text-white/40">每笔调用的 20% 实时入账</p>
         </div>
 
         <Separator />
 
-        <SplitBlock latestPayout={latestPayout} hasLatest={hasLatest} />
+        <SplitBlock
+          latestPayout={latestPayout}
+          latestTxHash={latestTxHash}
+          hasLatest={hasLatest}
+        />
       </div>
     </GlassPanel>
   );
 }
 
 /** Focal "this split" panel. When a settlement exists the figure resolves up
- * with an emerald glow; otherwise it rests in a quiet waiting state. */
+ * with an emerald glow, replaying on each new settlement; otherwise it rests in
+ * a quiet waiting state. */
 function SplitBlock({
   latestPayout,
+  latestTxHash,
   hasLatest,
 }: {
   latestPayout: string;
+  latestTxHash: string | null;
   hasLatest: boolean;
 }) {
   const reduce = useReducedMotion();
@@ -124,7 +142,9 @@ function SplitBlock({
       {hasLatest ? (
         <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <motion.span
-            key={latestPayout}
+            // Key on the tx hash so the toast replays on every new settlement,
+            // even when two charges happen to share the same amount.
+            key={latestTxHash ?? latestPayout}
             className="font-mono text-3xl font-semibold tracking-tight text-emerald drop-shadow-[0_0_18px_rgba(52,211,153,0.45)]"
             initial={{ opacity: 0, y: 10, filter: "blur(6px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -134,7 +154,19 @@ function SplitBlock({
           >
             +{formatUsdc(latestPayout)}
           </motion.span>
-          <span className="text-xs text-white/45">链上即时到账</span>
+          {latestTxHash ? (
+            <a
+              href={explorerTxUrl(latestTxHash)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-white/45 underline-offset-4 transition-colors duration-500 ease-spring hover:text-emerald hover:underline"
+            >
+              链上即时到账
+              <ArrowUpRight weight="light" className="h-3 w-3" aria-hidden />
+            </a>
+          ) : (
+            <span className="text-xs text-white/45">链上即时到账</span>
+          )}
         </div>
       ) : (
         <p className="mt-1.5 text-sm text-white/45">等待下一次调用结算</p>

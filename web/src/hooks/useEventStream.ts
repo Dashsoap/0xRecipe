@@ -1,159 +1,121 @@
 "use client";
 
 import * as React from "react";
-import type { FusionResult, SettlementEvent } from "@0xrecipe/shared";
+import type { SettlementEvent } from "@0xrecipe/shared";
+
+import { EVENTS_URL } from "@/lib/api";
 
 /**
- * One row in the Agent view's recent-calls list. Mirrors what a single
- * charged call will surface: which recipe, how much was charged, and the
- * settlement tx it produced.
+ * One row in the Agent view's recent-calls list, derived from a settlement:
+ * which recipe was invoked, how much was charged, and the on-chain tx.
  */
 export interface CallRecord {
   id: string;
-  /** Display label of the recipe that was called. */
+  /** Display label for the call. */
   recipe: string;
   /** Charged amount, in USDC base units (6 decimals), as a string. */
   amount: string;
-  txHash: `0x${string}`;
+  txHash: string;
   /** Unix epoch milliseconds. */
   timestamp: number;
   status: "settled" | "rejected";
 }
 
+/** Connection state of the settlement stream. */
+export type StreamStatus = "connecting" | "open" | "error";
+
 export interface EventStreamState {
-  /** Agent view: wallet, escrow balance and per-recipe budget. */
-  agent: {
-    address: `0x${string}`;
-    /** Remaining escrow balance, USDC base units (6 decimals). */
-    balance: string;
-    /** Budget ceiling for the demo run, USDC base units. */
-    budgetTotal: string;
-    /** Amount spent so far, USDC base units. */
-    budgetSpent: string;
-    recentCalls: CallRecord[];
-  };
-  /** Creator view: wallet, cumulative payout and the latest split. */
-  creator: {
-    address: `0x${string}`;
-    /** Cumulative earnings, USDC base units (6 decimals). */
-    totalEarned: string;
-    /** Most recent payout share, USDC base units. */
-    latestPayout: string;
-  };
-  /** Newest settlement first. Drives the on-chain activity feed. */
+  /** Settlement events, newest first. Empty until the first event arrives. */
   settlements: SettlementEvent[];
-  /** Latest structured synthesis surfaced by a call, if any. */
-  latestResult: FusionResult | null;
-  /** True once a real stream is connected. Always false for demo data. */
-  connected: boolean;
-  /** Marks the data as placeholder so the UI can label it clearly. */
-  isDemo: boolean;
+  /** Live connection state of the event stream. */
+  status: StreamStatus;
 }
 
-// --- Demo data ----------------------------------------------------------
-// Obvious placeholders only: zero / 0xDEMO-style addresses, amounts the UI
-// labels as demo. No real wallets, recipes, prices or business entities.
-// Replaced wholesale once the SSE wiring below is switched on.
+/** Keep the in-memory feed bounded; the explorer only ever shows the latest. */
+const MAX_SETTLEMENTS = 50;
 
-const DEMO_AGENT_ADDR =
-  "0x0000000000000000000000000000000000DE110A" as `0x${string}`;
-const DEMO_CREATOR_ADDR =
-  "0x0000000000000000000000000000000000DE110C" as `0x${string}`;
-const DEMO_TX_A =
-  "0x0000000000000000000000000000000000000000000000000000000000DEM0A1" as `0x${string}`;
-const DEMO_TX_B =
-  "0x0000000000000000000000000000000000000000000000000000000000DEM0B2" as `0x${string}`;
-
-const DEMO_RECIPE_LABEL = "示例配方";
-// Neutral demo id — kept out of the UI, mirrors the 0xDEMO placeholder style.
-const DEMO_RECIPE_ID = "demo-recipe";
-
-function buildDemoState(): EventStreamState {
-  const now = Date.now();
-
-  const settlements: SettlementEvent[] = [
-    {
-      type: "settlement",
-      agent: DEMO_AGENT_ADDR,
-      creator: DEMO_CREATOR_ADDR,
-      amount: "50000", // demo, 6-decimal USDC base units
-      txHash: DEMO_TX_B,
-      recipeId: DEMO_RECIPE_ID,
-      ts: now - 12_000,
-    },
-    {
-      type: "settlement",
-      agent: DEMO_AGENT_ADDR,
-      creator: DEMO_CREATOR_ADDR,
-      amount: "50000", // demo
-      txHash: DEMO_TX_A,
-      recipeId: DEMO_RECIPE_ID,
-      ts: now - 48_000,
-    },
-  ];
-
-  const recentCalls: CallRecord[] = [
-    {
-      id: "demo-2",
-      recipe: DEMO_RECIPE_LABEL,
-      amount: "50000",
-      txHash: DEMO_TX_B,
-      timestamp: now - 12_000,
-      status: "settled",
-    },
-    {
-      id: "demo-1",
-      recipe: DEMO_RECIPE_LABEL,
-      amount: "50000",
-      txHash: DEMO_TX_A,
-      timestamp: now - 48_000,
-      status: "settled",
-    },
-  ];
-
-  return {
-    agent: {
-      address: DEMO_AGENT_ADDR,
-      balance: "100000", // demo escrow remaining
-      budgetTotal: "200000", // demo budget ceiling
-      budgetSpent: "100000", // demo spent
-      recentCalls,
-    },
-    creator: {
-      address: DEMO_CREATOR_ADDR,
-      totalEarned: "20000", // demo cumulative (creator's 20% of charged)
-      latestPayout: "10000", // demo latest split (creator's 20% of one charge)
-    },
-    settlements,
-    latestResult: null,
-    connected: false,
-    isDemo: true,
-  };
+/** Narrow unknown JSON to a SettlementEvent before trusting any field. */
+function isSettlementEvent(value: unknown): value is SettlementEvent {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === "settlement" &&
+    typeof v.agent === "string" &&
+    typeof v.creator === "string" &&
+    typeof v.amount === "string" &&
+    typeof v.txHash === "string" &&
+    typeof v.recipeId === "string" &&
+    typeof v.ts === "number"
+  );
 }
 
 /**
- * Live event stream for the demo dashboard.
+ * Subscribe to the backend's server-sent settlement stream.
  *
- * Today this returns obviously-placeholder demo data so the three-pane layout
- * renders without a backend. The real implementation subscribes to the
- * backend SSE endpoint and updates state from `settlement` events.
+ * SSR-safe: the EventSource is only opened inside an effect (never on the
+ * server or during the first render), so the initial markup is the empty,
+ * "connecting" state on both server and client — no hydration mismatch.
  *
- * TODO(backend): once the backend is up, replace `buildDemoState()` with an
- * EventSource subscription, e.g.
- *
- *   const url = process.env.NEXT_PUBLIC_EVENTS_URL; // e.g. http://localhost:PORT/events/stream
- *   const es = new EventSource(url);
- *   es.addEventListener("settlement", (e) => {
- *     const evt = JSON.parse(e.data) as SettlementEvent;
- *     // prepend to settlements, push a CallRecord, decrement agent.balance,
- *     // bump creator.totalEarned / latestPayout, set connected = true.
- *   });
- *   return () => es.close();
- *
- * Until then `isDemo` stays true and `connected` stays false so the UI can
- * label the data as a placeholder rather than imply a live feed.
+ * Exposes the running list of settlements (newest first) and the connection
+ * status. The browser's EventSource auto-reconnects after a drop; we surface
+ * "error" while it retries and flip back to "open" once it reconnects. No
+ * data is ever fabricated — an empty list means no settlements have arrived.
  */
 export function useEventStream(): EventStreamState {
-  const [state] = React.useState<EventStreamState>(buildDemoState);
-  return state;
+  const [settlements, setSettlements] = React.useState<SettlementEvent[]>([]);
+  const [status, setStatus] = React.useState<StreamStatus>("connecting");
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof EventSource === "undefined") {
+      return;
+    }
+
+    let closed = false;
+
+    const ingest = (raw: string) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return; // ignore keep-alive pings and any non-JSON frames
+      }
+      if (!isSettlementEvent(parsed)) return;
+      const event = parsed;
+      setSettlements((prev) => {
+        // De-dupe on tx hash so a reconnect replay can't double-count.
+        if (prev.some((s) => s.txHash === event.txHash)) return prev;
+        return [event, ...prev].slice(0, MAX_SETTLEMENTS);
+      });
+    };
+
+    let source: EventSource;
+    try {
+      source = new EventSource(EVENTS_URL);
+    } catch {
+      setStatus("error");
+      return;
+    }
+
+    source.onopen = () => {
+      if (!closed) setStatus("open");
+    };
+    source.onerror = () => {
+      // EventSource transitions to CONNECTING and retries on its own; reflect
+      // the interruption honestly while it does.
+      if (!closed) setStatus("error");
+    };
+    // Backend tags settlement frames with `event: settlement`.
+    source.addEventListener("settlement", (e) =>
+      ingest((e as MessageEvent).data),
+    );
+    // Also accept default-typed frames in case a producer omits the event name.
+    source.onmessage = (e) => ingest(e.data);
+
+    return () => {
+      closed = true;
+      source.close();
+    };
+  }, []);
+
+  return { settlements, status };
 }
