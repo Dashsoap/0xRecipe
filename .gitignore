@@ -30,6 +30,8 @@ HANDOFF.md
 # tooling / local (scheduler + workflow scratch, build caches)
 .claude/
 .workflow/
+.agents/
+skills-lock.json
 .turbo/
 *.tsbuildinfo
 .pnpm-store/
