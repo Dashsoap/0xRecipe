@@ -14,6 +14,7 @@
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { formatUnits, getAddress, type Address, type Hex } from "viem";
 import {
@@ -35,6 +36,24 @@ import { insertLedgerEntry, listLedgerByAgent } from "./db.js";
 import { claimNonce, settleNonce, releaseNonce } from "./nonces.js";
 
 const app = new Hono();
+
+// CORS: the web dashboard is served from a different origin (e.g. :3000) than
+// this API (:3001), so the browser's SSE subscription (/events/stream) and
+// balance reads (/v1/balance) are cross-origin and need an ACAO header or the
+// browser blocks them. These endpoints expose only public on-chain data, and
+// the paid POST is authorized by a signed voucher (not by origin), so a
+// permissive default is safe; lock it down via CORS_ORIGINS (comma-separated)
+// in production. allowHeaders must include the custom PAYMENT-SIGNATURE header
+// so the preflight for the paid call passes.
+const corsOrigins = config.corsOrigins;
+app.use(
+  "*",
+  cors({
+    origin: corsOrigins && corsOrigins.length > 0 ? corsOrigins : "*",
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Content-Type", "PAYMENT-SIGNATURE"],
+  }),
+);
 
 // --- SSE broadcast hub -------------------------------------------------------
 
@@ -132,7 +151,7 @@ app.get("/health", (c) => {
     configured: {
       escrow: Boolean(config.agentEscrowAddress),
       splitter: Boolean(config.fusionSplitterAddress),
-      backendWallet: Boolean(config.backendPrivateKey),
+      backendWallet: Boolean(config.backendPrivateKey || config.mnemonic),
       standardSource: Boolean(config.llmGatewayKey),
       officialSource: Boolean(config.llmGatewayKeyPure),
     },

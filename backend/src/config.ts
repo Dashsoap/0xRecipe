@@ -42,6 +42,13 @@ export interface Config {
   platformAddr: string | undefined;
   hardcodedCreatorAddr: string | undefined;
   backendPrivateKey: string | undefined;
+  /**
+   * Optional BIP-39 mnemonic. When BACKEND_PRIVATE_KEY is unset, the backend hot
+   * wallet is derived from this at address index 0 (the deployed `onlyBackend`
+   * signer). Lets a single funded seed back the relayer/charge signer without
+   * copying a raw private key into a second variable. Never logged.
+   */
+  mnemonic: string | undefined;
 
   // --- model gateway (OpenAI-compatible) ---
   llmGatewayUrl: string;
@@ -53,6 +60,12 @@ export interface Config {
   // --- pricing / voucher ---
   recipePriceUsdc: string | undefined;
   voucherDomain: string | undefined;
+
+  // --- web / CORS ---
+  /** Allowed browser origins for cross-origin reads (SSE, balance). Empty/unset
+   * means allow any origin — safe here because these endpoints serve only public
+   * on-chain data and the paid call is authorized by a signed voucher. */
+  corsOrigins: string[] | undefined;
 }
 
 export const config: Config = {
@@ -64,6 +77,7 @@ export const config: Config = {
   platformAddr: env("PLATFORM_ADDR"),
   hardcodedCreatorAddr: env("HARDCODED_CREATOR_ADDR"),
   backendPrivateKey: env("BACKEND_PRIVATE_KEY"),
+  mnemonic: env("MNEMONIC"),
 
   llmGatewayUrl: envOr("LLM_GATEWAY_URL", DEFAULT_GATEWAY_URL),
   llmGatewayKey: env("LLM_GATEWAY_KEY"),
@@ -71,6 +85,11 @@ export const config: Config = {
 
   recipePriceUsdc: env("RECIPE_PRICE_USDC"),
   voucherDomain: env("VOUCHER_DOMAIN"),
+
+  corsOrigins: env("CORS_ORIGINS")
+    ?.split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0),
 };
 
 /**
@@ -90,11 +109,13 @@ export function requireEnv<K extends keyof Config>(keys: K[]): void {
     platformAddr: "PLATFORM_ADDR",
     hardcodedCreatorAddr: "HARDCODED_CREATOR_ADDR",
     backendPrivateKey: "BACKEND_PRIVATE_KEY",
+    mnemonic: "MNEMONIC",
     llmGatewayUrl: "LLM_GATEWAY_URL",
     llmGatewayKey: "LLM_GATEWAY_KEY",
     llmGatewayKeyPure: "LLM_GATEWAY_KEY_PURE",
     recipePriceUsdc: "RECIPE_PRICE_USDC",
     voucherDomain: "VOUCHER_DOMAIN",
+    corsOrigins: "CORS_ORIGINS",
   };
 
   for (const key of keys) {
