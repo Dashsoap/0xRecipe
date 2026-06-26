@@ -81,6 +81,46 @@ function clientForChannel(channel: Channel): OpenAI {
 }
 
 /**
+ * Some upstream channels behind the gateway (notably certain Anthropic routes)
+ * reject a `system` role inside `messages` and demand a top-level system
+ * parameter the OpenAI wire format cannot express. The gateway load-balances a
+ * model across such channels, so the same request succeeds on one channel and
+ * 400s on another. Detect that specific 400 so we can self-heal by folding the
+ * system text into the first user message and retrying. Not retried by the SDK
+ * (400 is a client error), so we handle it ourselves.
+ */
+function isSystemPlacementError(err: unknown): boolean {
+  return (
+    err instanceof OpenAI.APIError &&
+    err.status === 400 &&
+    typeof err.message === "string" &&
+    /top-level 'system'|system parameter|use the top-level/i.test(err.message)
+  );
+}
+
+/**
+ * Fold all `system` messages into the first user message, preserving order and
+ * content, so a channel that refuses a `system` role still receives the full
+ * instruction. Quality impact is minor; only used as a fallback on the specific
+ * 400 above (channels that accept `system` keep the original shape).
+ */
+export function foldSystemIntoUser(messages: ChatMessage[]): ChatMessage[] {
+  const system = messages
+    .filter((m) => m.role === "system")
+    .map((m) => m.content)
+    .join("\n\n");
+  if (!system) return messages;
+  const rest = messages.filter((m) => m.role !== "system");
+  const firstUser = rest.findIndex((m) => m.role === "user");
+  if (firstUser === -1) {
+    return [{ role: "user", content: system }, ...rest];
+  }
+  return rest.map((m, i) =>
+    i === firstUser ? { ...m, content: `${system}\n\n${m.content}` } : m,
+  );
+}
+
+/**
  * Non-streaming call: returns the assistant text of the first choice.
  * Throws on transport / auth errors — callers must not fabricate a result.
  */
@@ -109,7 +149,22 @@ export async function callModel(
     return client.chat.completions.create({ ...base, stream: true });
   }
 
-  const completion = await client.chat.completions.create({ ...base, stream: false });
+  let completion;
+  try {
+    completion = await client.chat.completions.create({ ...base, stream: false });
+  } catch (err) {
+    // Self-heal the cross-channel `system`-placement 400 (see helper above):
+    // retry once with the system text folded into the first user message.
+    if (isSystemPlacementError(err)) {
+      completion = await client.chat.completions.create({
+        ...base,
+        messages: foldSystemIntoUser(params.messages),
+        stream: false,
+      });
+    } else {
+      throw err;
+    }
+  }
   const content = completion.choices[0]?.message?.content;
   if (content == null) {
     // User-safe message only: never interpolate the raw model id — this Error
