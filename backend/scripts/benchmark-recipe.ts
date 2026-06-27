@@ -93,7 +93,22 @@ async function grade(c: BenchCase, outputText: string): Promise<Grade> {
         ],
         temperature: 0,
       });
-      const parsed = JSON.parse(stripFence(raw)) as { found: boolean[]; hallucinations: number };
+      // Validate the grader's structured response before trusting its shape.
+      // A malformed/empty/non-JSON `found` would otherwise produce a phantom
+      // recall of 0 (silently incorrect) or a TypeError that aborts the whole
+      // benchmark run. We treat schema breaks as grader failure and fall back.
+      const parsed = JSON.parse(stripFence(raw)) as Partial<{
+        found: unknown;
+        hallucinations: unknown;
+      }>;
+      if (!parsed || !Array.isArray(parsed.found)) {
+        throw new Error("grader response missing `found` array");
+      }
+      if (parsed.found.length !== c.expected.length) {
+        throw new Error(
+          `grader returned ${parsed.found.length} verdicts, expected ${c.expected.length}`,
+        );
+      }
       const found = parsed.found.filter(Boolean).length;
       return {
         recall: found / c.expected.length,

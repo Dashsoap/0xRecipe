@@ -74,9 +74,21 @@ async function think(system: string, user: string): Promise<string> {
       max_tokens: 320,
     }),
   });
+  // Check status BEFORE parsing JSON: a non-2xx response from the gateway can
+  // be HTML (e.g. an upstream proxy 502), which would otherwise throw a
+  // SyntaxError that hides the real HTTP error. Then guard the shape so a
+  // malformed-but-200 response surfaces a clear error instead of crashing
+  // mid-loop on an undefined `.message.content`.
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`brain call failed ${res.status}: ${detail.slice(0, 200)}`);
+  }
   const j: any = await res.json();
-  if (!res.ok) throw new Error(`brain call failed ${res.status}`);
-  return j.choices[0].message.content.trim();
+  const content = j?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") {
+    throw new Error("brain call returned an unexpected response shape");
+  }
+  return content.trim();
 }
 
 const BRAIN_SYSTEM =
@@ -118,7 +130,16 @@ async function reviewContract(
       messages: [{ role: "user", content: `${question}\n\n=== LEASE ===\n${LEASE_TEXT}` }],
     }),
   });
-  return { status: res.status, body: await res.json() };
+  // Tolerate non-JSON error bodies (e.g. an upstream proxy serving HTML on a
+  // 502). The agent script must keep running so the demo's 403 reasoning step
+  // can still execute, instead of crashing on a `await res.json()` SyntaxError.
+  let body: any;
+  try {
+    body = await res.json();
+  } catch {
+    body = { error: "non_json_response", message: `HTTP ${res.status} returned non-JSON content.` };
+  }
+  return { status: res.status, body };
 }
 
 async function balance(): Promise<bigint> {
