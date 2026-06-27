@@ -58,13 +58,29 @@ export interface SolvencyResult {
 }
 
 /**
+ * Per-agent promise chain — serializes reserve() for the same agent so the
+ * "hold + balance read + total-held sample + decide + maybe-rollback" sequence
+ * is atomic from a same-agent perspective. Different agents still run in
+ * parallel (each has its own chain), so throughput is unaffected.
+ *
+ * Without this, concurrent same-agent reserves can read `totalHeld` while
+ * other in-flight reserves are mid-await, producing two failure modes:
+ *   (a) spurious 403s — a request gets rejected on holds that will release
+ *       moments later when another reserve fails its Fusion run, and
+ *   (b) misleading `available` numbers reported on 403 (concurrency noise,
+ *       not ground truth) — which would in turn mislead the agent's brain
+ *       when it reasons about whether to top up.
+ */
+const reserveChains = new Map<string, Promise<void>>();
+
+/**
  * Atomically reserve `price` for an in-flight call.
  *
- * Concurrency guarantee: the hold is placed SYNCHRONOUSLY before the async
- * balance read, so two requests from the same agent both observe each other's
- * holds when they resume after the read — only as many as the balance covers
- * pass, the rest are rejected. (A check-then-hold across the await would let
- * concurrent callers both pass and over-commit, then fail on-chain at charge.)
+ * Concurrency guarantee: same-agent reserves are serialized through a tail
+ * promise chain (see `reserveChains` above). Within the critical section, the
+ * hold is still placed SYNCHRONOUSLY before the on-chain balance read; the
+ * mutex ensures no other same-agent reserve can mutate `held` while we sample
+ * `heldFor` and decide.
  *
  * On success the hold is RETAINED and the caller MUST release() it after the
  * charge succeeds or the run fails. On a budget shortfall — or a balance-read
@@ -77,25 +93,51 @@ export async function reserve(
   agent: Address,
   price: bigint,
 ): Promise<SolvencyResult> {
-  // Place the hold first so concurrent calls observe it across the await below.
-  hold(agent, price);
+  const k = key(agent);
+  const prev = reserveChains.get(k) ?? Promise.resolve();
 
-  let balance: bigint;
+  // Build this reservation's gate and chain it AFTER `prev`. The next concurrent
+  // reserve will await `chained` and so on, forming a FIFO per-agent queue.
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((r) => (releaseGate = r));
+  const chained = prev.then(() => gate);
+  reserveChains.set(k, chained);
+
+  // Wait for any prior same-agent reserve to finish before entering our section.
+  // `prev` only ever resolves (its tail `gate` is released in `finally`), so we
+  // never deadlock on a thrown reservation upstream.
+  await prev;
+
   try {
-    balance = await readBalance(agent);
-  } catch (err) {
-    release(agent, price); // roll back on read failure — nothing was spent
-    throw err;
+    // Critical section: synchronous hold, async balance read, sample, decide.
+    // No other same-agent reserve can run any of these steps in parallel.
+    hold(agent, price);
+
+    let balance: bigint;
+    try {
+      balance = await readBalance(agent);
+    } catch (err) {
+      release(agent, price); // roll back on read failure — nothing was spent
+      throw err;
+    }
+
+    const totalHeld = heldFor(agent); // this reservation + any older retained holds
+    const ok = balance >= totalHeld;
+    const otherHeld = totalHeld - price; // holds excluding this reservation
+    const available = balance - otherHeld;
+
+    if (!ok) {
+      release(agent, price); // give the reservation back
+    }
+
+    return { ok, balance, held: otherHeld, available };
+  } finally {
+    // Release this gate so the next queued reserve can proceed. Trim the map
+    // tail when we're the last in the chain so it can't grow unbounded under
+    // long-running churn (Map check is identity, race-safe).
+    releaseGate();
+    if (reserveChains.get(k) === chained) {
+      reserveChains.delete(k);
+    }
   }
-
-  const totalHeld = heldFor(agent); // includes this reservation + concurrent ones
-  const ok = balance >= totalHeld;
-  const otherHeld = totalHeld - price; // holds excluding this reservation
-  const available = balance - otherHeld;
-
-  if (!ok) {
-    release(agent, price); // give the reservation back
-  }
-
-  return { ok, balance, held: otherHeld, available };
 }

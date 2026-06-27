@@ -133,7 +133,19 @@ function openDatabase(): Database.Database {
   return database;
 }
 
-const db = openDatabase();
+/**
+ * Shared SQLite handle. Exported so other modules (e.g. the nonce replay guard)
+ * can persist to the SAME database without opening a second connection, which
+ * better-sqlite3 would let do — but a second handle on the same on-disk file
+ * complicates WAL semantics, and on `:memory:` (test runs) it would create an
+ * unrelated DB. One handle, one schema, all migrations in this file.
+ *
+ * Explicit `Database.Database` annotation: better-sqlite3's default-exported
+ * type name (`BetterSqlite3.Database`) cannot be reproduced by tsc when
+ * emitting declarations, so without this annotation the compiler refuses to
+ * infer a public type for the export (TS4023).
+ */
+export const db: Database.Database = openDatabase();
 
 // Idempotent: safe to run on every boot. Keep this CREATE in sync with the
 // identical statement in backend/scripts/recipe-admin.mjs.

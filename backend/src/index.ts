@@ -14,6 +14,7 @@
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { formatUnits, getAddress, type Address, type Hex } from "viem";
@@ -498,6 +499,18 @@ app.get("/events/stream", (c) => {
 });
 
 /**
+ * Maximum voucher window: a voucher's `expiry - now` must not exceed this. A
+ * captured voucher header is only replayable until expiry (then the L522 check
+ * rejects it), so bounding the window from above bounds the replay risk even
+ * across rare persistence lag. 120 s comfortably covers a deposit-funded call
+ * plus retry without leaving a long-lived attestation in the wild.
+ */
+const MAX_VOUCHER_WINDOW_SEC = 120n;
+
+/** Cap how much user-message text a paid call may post (defense in depth on top of bodyLimit). */
+const MAX_USER_MESSAGE_CHARS = 32_000;
+
+/**
  * Paid Fusion endpoint.
  *
  * 401 (auth) vs 403 (budget): a missing / invalid / expired / mismatched
@@ -505,8 +518,26 @@ app.get("/events/stream", (c) => {
  * (or a price above the voucher's maxPrice) returns 403. The client must
  * distinguish them — a 403 means "balance/budget too low", so it should NOT
  * re-sign and retry; it should surface the shortfall to the agent's reasoning.
+ *
+ * Body size: bounded by hono/body-limit middleware. 64 KB is generous for an
+ * LLM prompt and well below anything that could starve the in-memory hold pool
+ * via repeated valid-voucher + huge-body submissions.
  */
-app.post("/v1/chat/completions", async (c) => {
+app.post(
+  "/v1/chat/completions",
+  bodyLimit({
+    maxSize: 64 * 1024,
+    onError: (c) =>
+      c.json(
+        {
+          error: "body_too_large",
+          message:
+            "Request body exceeds the maximum allowed size (64 KB). Reduce the prompt and try again.",
+        },
+        413,
+      ),
+  }),
+  async (c) => {
   // 1. Parse + verify the voucher (recover signer == agent).
   let parsed: ParsedVoucher;
   try {
@@ -522,6 +553,18 @@ app.post("/v1/chat/completions", async (c) => {
   if (parsed.voucher.expiry <= nowSec) {
     return c.json(
       { error: "voucher_expired", message: "This payment voucher has expired." },
+      401,
+    );
+  }
+  // Cap the voucher window from above. A captured PAYMENT-SIGNATURE is only
+  // replayable until expiry, so bounding the window bounds the replay risk.
+  // The persisted nonce table is the primary defense; this is belt-and-braces.
+  if (parsed.voucher.expiry - nowSec > MAX_VOUCHER_WINDOW_SEC) {
+    return c.json(
+      {
+        error: "voucher_window_too_long",
+        message: `Voucher expiry must be within ${MAX_VOUCHER_WINDOW_SEC} s of now.`,
+      },
       401,
     );
   }
@@ -580,6 +623,38 @@ app.post("/v1/chat/completions", async (c) => {
     );
   }
 
+  // 2.4. Parse + validate the body BEFORE claiming the nonce or holding funds.
+  //      If we parsed after, a malformed/empty/oversize body would still burn a
+  //      nonce and hold `price` for the duration of this request — repeatable by
+  //      an attacker to exhaust the in-memory hold pool. Parsing first means a
+  //      400 never disturbs nonce / hold state.
+  let userMessage: string;
+  try {
+    const body = await c.req.json<{
+      messages?: Array<{ role: string; content: string }>;
+    }>();
+    if (!Array.isArray(body.messages)) {
+      throw new Error("`messages` must be an array.");
+    }
+    userMessage = body.messages
+      .filter((m) => m.role === "user" && typeof m.content === "string")
+      .map((m) => m.content)
+      .join("\n\n");
+    if (userMessage.trim().length === 0) {
+      throw new Error("Request body must include at least one user message.");
+    }
+    if (userMessage.length > MAX_USER_MESSAGE_CHARS) {
+      throw new Error(
+        `User message text exceeds the maximum of ${MAX_USER_MESSAGE_CHARS} chars.`,
+      );
+    }
+  } catch (err) {
+    return c.json(
+      { error: "bad_request", message: (err as Error).message },
+      400,
+    );
+  }
+
   // 2.5. Claim the voucher nonce (replay guard): one signed voucher settles at
   //      most once. Claimed synchronously before the reserve so two identical
   //      submissions cannot both proceed; freed again on any path that does not
@@ -634,31 +709,9 @@ app.post("/v1/chat/completions", async (c) => {
   }
 
   // 4. The price is already held by reserve(); run Fusion, charge on success.
+  //    `userMessage` was parsed and validated in step 2.4 before any state mutation.
   let result: FusionResult;
   try {
-    let userMessage = "";
-    try {
-      const body = await c.req.json<{
-        messages?: Array<{ role: string; content: string }>;
-      }>();
-      userMessage =
-        body.messages?.filter((m) => m.role === "user").map((m) => m.content).join("\n\n") ??
-        "";
-    } catch {
-      userMessage = "";
-    }
-    if (userMessage.trim().length === 0) {
-      release(agent, price);
-      releaseNonce(agent, parsed.voucher.nonce);
-      return c.json(
-        {
-          error: "empty_request",
-          message: "Request body must include at least one user message.",
-        },
-        400,
-      );
-    }
-
     result = await runFusion(recipe, userMessage);
   } catch (err) {
     // 5a. Failure: release the hold + nonce, do NOT charge, surface an honest

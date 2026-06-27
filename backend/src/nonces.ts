@@ -14,37 +14,55 @@
  * until its voucher expiry, after which the expiry check rejects it anyway and
  * the record can be pruned).
  *
- * In-memory is correct for the single-process MVP; a multi-process deployment
- * would back this with a shared store (e.g. Redis SETNX).
+ * Storage: SQLite-backed (better-sqlite3 prepared statements, synchronous).
+ * Persisting the table means a process restart no longer opens a replay window
+ * for any voucher captured within its (at most 120 s) expiry. The handle is the
+ * same database used for recipes + the ledger, so no extra dependency.
  */
 import type { Address } from "viem";
+import { db } from "./db.js";
 
-interface NonceRecord {
-  /** Unix seconds after which this record may be pruned. */
-  expiry: bigint;
-  /** True once a charge settled — permanently spent until expiry. */
-  settled: boolean;
-}
+// Idempotent schema. Safe to run on every boot.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS voucher_nonces (
+    agent    TEXT    NOT NULL,
+    nonce    TEXT    NOT NULL,
+    expiry   INTEGER NOT NULL,
+    settled  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (agent, nonce)
+  );
+  CREATE INDEX IF NOT EXISTS idx_voucher_nonces_expiry ON voucher_nonces(expiry);
+`);
 
-/** key = `${agent.toLowerCase()}:${nonce}` -> claim record. */
-const claimed = new Map<string, NonceRecord>();
+// --- Prepared statements -----------------------------------------------------
 
-function key(agent: Address, nonce: bigint): string {
-  return `${agent.toLowerCase()}:${nonce.toString()}`;
-}
+const pruneStmt = db.prepare(
+  "DELETE FROM voucher_nonces WHERE expiry <= ?",
+);
+const claimStmt = db.prepare(
+  "INSERT OR IGNORE INTO voucher_nonces (agent, nonce, expiry) VALUES (?, ?, ?)",
+);
+const settleStmt = db.prepare(
+  "UPDATE voucher_nonces SET settled = 1 WHERE agent = ? AND nonce = ?",
+);
+const releaseStmt = db.prepare(
+  "DELETE FROM voucher_nonces WHERE agent = ? AND nonce = ? AND settled = 0",
+);
+const countStmt = db.prepare(
+  "SELECT COUNT(*) AS n FROM voucher_nonces",
+);
 
-/** Drop records whose voucher expiry has passed (those vouchers are dead anyway). */
-function prune(nowSec: bigint): void {
-  for (const [k, rec] of claimed) {
-    if (rec.expiry <= nowSec) claimed.delete(k);
-  }
-}
+// --- Public API --------------------------------------------------------------
 
 /**
  * Atomically claim a voucher nonce for an in-flight call. Returns true if the
  * nonce was free (caller may proceed), false if it was already claimed/settled
- * (caller must reject the request as a replay). Synchronous so concurrent
- * identical submissions cannot both observe a free slot.
+ * (caller must reject the request as a replay).
+ *
+ * Atomic via `INSERT OR IGNORE` — SQLite's primary-key conflict resolution
+ * serializes concurrent inserts, so two identical submissions cannot both
+ * observe a free slot. Expired records on the same key are pruned first so a
+ * fresh claim past expiry succeeds (matches the prior in-memory semantics).
  */
 export function claimNonce(
   agent: Address,
@@ -52,30 +70,42 @@ export function claimNonce(
   expiry: bigint,
   nowSec: bigint,
 ): boolean {
-  prune(nowSec);
-  const k = key(agent, nonce);
-  if (claimed.has(k)) return false;
-  claimed.set(k, { expiry, settled: false });
-  return true;
+  // Drop dead records first so this nonce can be re-claimed past its old expiry.
+  // Cheap because of the expiry index; a separate background sweep also runs.
+  pruneStmt.run(Number(nowSec));
+  const result = claimStmt.run(
+    agent.toLowerCase(),
+    nonce.toString(),
+    Number(expiry),
+  );
+  return result.changes === 1; // 0 means a row already existed.
 }
 
 /** Mark a claimed nonce permanently spent — call only after a charge settles. */
 export function settleNonce(agent: Address, nonce: bigint): void {
-  const rec = claimed.get(key(agent, nonce));
-  if (rec) rec.settled = true;
+  settleStmt.run(agent.toLowerCase(), nonce.toString());
 }
 
 /**
  * Free a claimed-but-unsettled nonce so a legitimate retry can reuse the same
- * voucher. A nonce already marked settled is left spent (never reopened).
+ * voucher. The WHERE clause guards `settled = 0`, so a nonce already marked
+ * settled is left spent (never reopened post-charge).
  */
 export function releaseNonce(agent: Address, nonce: bigint): void {
-  const k = key(agent, nonce);
-  const rec = claimed.get(k);
-  if (rec && !rec.settled) claimed.delete(k);
+  releaseStmt.run(agent.toLowerCase(), nonce.toString());
 }
 
-/** Test/diagnostic helper: number of live claim records. */
+/** Test / diagnostic helper: number of live claim records. */
 export function claimedCount(): number {
-  return claimed.size;
+  const row = countStmt.get() as { n: number };
+  return row.n;
 }
+
+// Background prune: trim stale rows every 60 s under a fresh `nowSec`. Keeps
+// the table small on an idle server even if no claimNonce calls arrive. .unref()
+// so the timer never holds the process open at shutdown.
+const pruneInterval = setInterval(
+  () => pruneStmt.run(Math.floor(Date.now() / 1000)),
+  60_000,
+);
+pruneInterval.unref();

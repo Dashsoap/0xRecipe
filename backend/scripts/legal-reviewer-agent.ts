@@ -90,7 +90,10 @@ async function reviewContract(
   question: string,
 ): Promise<{ status: number; body: any }> {
   const nonce = BigInt("0x" + randomBytes(8).toString("hex"));
-  const expiry = BigInt(Math.floor(Date.now() / 1000) + 300);
+  // 90 s sits comfortably below the server's MAX_VOUCHER_WINDOW_SEC = 120 s cap,
+  // with headroom for clock skew. A shorter window shrinks the replay attack
+  // surface if a captured PAYMENT-SIGNATURE ever leaks (e.g. via a server log).
+  const expiry = BigInt(Math.floor(Date.now() / 1000) + 90);
   const maxPrice = 1_000_000n;
   const signature = await agent.signTypedData({
     domain: VOUCHER_DOMAIN,
