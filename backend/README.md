@@ -100,23 +100,70 @@ Server-Sent Events. Emits a `settlement` event after each successful charge
 Liveness plus which dependencies are configured (escrow / splitter / backend
 wallet / standard source / official source).
 
-## Skeleton status (to be wired during integration)
+## Current status
 
-This package is the route + type skeleton. The structure and types are
-complete, but the following depend on external pieces that land during
-integration. Where a dependency is unconfigured, the endpoint fails fast with a
-clear "not configured" error and **never returns fabricated data**.
+The backend hot path is implemented: voucher verification, expiry checks,
+SQLite-backed nonce replay protection, on-chain solvency checks, in-flight
+holds, Fusion execution, atomic escrow charging, SSE broadcast, and the local
+usage ledger.
 
-- **On-chain reads/writes** (`src/escrow.ts`): need a deployed
-  `AGENT_ESCROW_ADDRESS` and a funded `BACKEND_PRIVATE_KEY`. Until then,
-  solvency checks return `503` and charges error honestly. The ABI is a minimal
-  fragment matching the contract interface; align it with the deployed
-  contract.
-- **Model calls** (`src/gateway.ts`, `src/fusion.ts`): need the gateway URL and
-  at least the source key(s) the recipe uses. The judge requests strict
-  `json_schema`; if a gateway does not forward it, the engine retries once with
-  a hardened prompt and otherwise throws (no fabricated result).
-- **Voucher nonce replay protection**: the voucher signature and expiry are
-  checked; per-agent nonce tracking is left for integration.
-- **Pricing** (`RECIPE_PRICE_USDC`): defaults to a demo price; set after the
-  cost analysis.
+External dependencies are still required for a live run. Where a dependency is
+unconfigured, the endpoint fails fast with a clear error and **never returns
+fabricated data**.
+
+- **On-chain reads/writes** (`src/escrow.ts`): require `AGENT_ESCROW_ADDRESS`
+  and either `BACKEND_PRIVATE_KEY` or `MNEMONIC`. The backend signer must match
+  the deployed escrow's `onlyBackend` address and be funded with INJ gas.
+- **Model calls** (`src/gateway.ts`, `src/fusion.ts`): require
+  `LLM_GATEWAY_URL` plus the source key(s) used by the recipe. The seeded recipe
+  uses both `LLM_GATEWAY_KEY` and `LLM_GATEWAY_KEY_PURE`.
+- **Pricing and recipe data**: the seeded recipe defaults to `1.00` USDC unless
+  `RECIPE_PRICE_USDC` is set before the first DB boot. After that, runtime price
+  lives in SQLite and can be inspected/changed via `scripts/recipe-admin.mjs`
+  (`list`, `show`, `set-price`, `set-creator`).
+- **Live e2e scripts**: `scripts/e2e-http.ts` and
+  `scripts/legal-reviewer-agent.ts` expect a repo-root `.env` loaded with
+  `node --env-file=../.env` from the backend directory.
+
+## Mock mode
+
+For local demos without the deployed backend EOA, funded wallets, or model keys,
+set:
+
+```bash
+MOCK_CHAIN=1
+MOCK_FUSION=1
+MOCK_AGENT_BALANCE_USDC=10.00
+```
+
+`MOCK_CHAIN=1` replaces escrow reads/writes with a fixed mock balance and
+synthetic tx hashes. `MOCK_FUSION=1` returns a deterministic Fusion fixture
+instead of calling the model gateway. The paid HTTP route still verifies the
+signed voucher, enforces nonce replay protection, emits SSE settlements, and
+writes the ledger, so it is useful for UI and agent-loop rehearsal. `/health`
+reports which mock switches are active.
+
+## Operator scripts
+
+From the repo root:
+
+```bash
+pnpm doctor
+pnpm e2e:dry-run
+pnpm gateway:smoke
+```
+
+- `doctor` checks public env state, deployed contract code, escrow wiring,
+  backend signer, recipe price/creator, and the demo agent escrow balance.
+- `e2e:dry-run` intentionally disables model keys and proves a Fusion failure
+  returns `502 fusion_failed` without charging escrow or emitting settlement.
+- `gateway:smoke` checks the standard and official OpenAI-compatible gateway
+  keys before running a full e2e.
+
+Recipe maintenance:
+
+```bash
+node --env-file=.env backend/scripts/recipe-admin.mjs list
+node --env-file=.env backend/scripts/recipe-admin.mjs show legal-reviewer-v1
+node --env-file=.env backend/scripts/recipe-admin.mjs reset-demo 0.05
+```

@@ -10,7 +10,11 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "doctor": "node --env-file=../.env scripts/doctor.mjs",
+    "e2e:dry-run": "node --env-file=../.env --import tsx scripts/e2e-dry-run.ts",
+    "gateway:smoke": "node --env-file=../.env scripts/gateway-smoke.mjs",
+    "recipe:reset-demo": "node --env-file=../.env scripts/recipe-admin.mjs reset-demo"
   },
   "dependencies": {
     "@0xrecipe/shared": "workspace:*",

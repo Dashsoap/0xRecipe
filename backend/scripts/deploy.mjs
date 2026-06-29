@@ -111,8 +111,10 @@ try {
   const up = (c, k, v) => { const re = new RegExp(`^${k}=.*$`, "m"); return re.test(c) ? c.replace(re, `${k}=${v}`) : `${c.replace(/\s*$/, "")}\n${k}=${v}\n`; };
   env = up(env, "AGENT_ESCROW_ADDRESS", escrow);
   env = up(env, "FUSION_SPLITTER_ADDRESS", splitter);
+  env = up(env, "PLATFORM_ADDR", platform.address);
+  env = up(env, "HARDCODED_CREATOR_ADDR", creator.address);
   writeFileSync(envUrl, env.endsWith("\n") ? env : env + "\n");
-  console.log("\n.env updated: AGENT_ESCROW_ADDRESS + FUSION_SPLITTER_ADDRESS");
+  console.log("\n.env updated: AGENT_ESCROW_ADDRESS + FUSION_SPLITTER_ADDRESS + PLATFORM_ADDR + HARDCODED_CREATOR_ADDR");
 } catch (e) { console.log("\n(.env not auto-updated:", e.message, "— set the two lines below manually)"); }
 
 console.log("\n=== DONE ===");

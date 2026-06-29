@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Beam } from "@/components/visuals/Beam";
 import { explorerTxUrl } from "@/lib/chain";
 import {
+  callsRemaining,
   formatUsdc,
   shortenAddress,
   shortenHash,
@@ -18,15 +19,21 @@ import {
 import type { CallRecord } from "@/hooks/useEventStream";
 
 export interface AgentPaneProps {
-  address: `0x${string}`;
-  /** Remaining escrow balance, USDC base units. */
-  balance: string;
-  /** 0 to 100, share of budget consumed. */
+  address: string;
+  /** False when no agent address is configured (zero placeholder shown). */
+  addressConfigured: boolean;
+  /** Remaining escrow balance in USDC base units, or null when unknown. */
+  balanceUnits: string | null;
+  /** True when the balance read failed (vs. simply still loading). */
+  balanceUnavailable: boolean;
+  /** 0 to 100, share of funds consumed this session. */
   usedPct: number;
-  /** Amount spent so far, USDC base units. */
+  /** Amount spent this session, USDC base units. */
   spent: string;
-  /** Budget ceiling, USDC base units. */
-  total: string;
+  /** Spent + remaining, USDC base units, or null when balance is unknown. */
+  total: string | null;
+  /** Current recipe price, USDC base units, or null while unknown. */
+  recipePriceUnits: string | null;
   recentCalls: CallRecord[];
 }
 
@@ -36,15 +43,30 @@ export interface AgentPaneProps {
  * a recent-calls list where each settled row carries a faint funds-flow beam
  * and links out to the on-chain transaction. The panel itself rests quiet
  * (hairline ring only); glow is reserved for the funds-flow beam and meter.
+ *
+ * Balance is read live from the backend. When no address is configured, or the
+ * read fails, the figure shows a dash and an honest note — never an invented
+ * number.
  */
 export function AgentPane({
   address,
-  balance,
+  addressConfigured,
+  balanceUnits,
+  balanceUnavailable,
   usedPct,
   spent,
   total,
+  recipePriceUnits,
   recentCalls,
 }: AgentPaneProps) {
+  const balanceNote = !addressConfigured
+    ? "尚未配置链上地址,余额暂不可用"
+    : balanceUnavailable
+      ? "暂时无法读取余额,请稍后重试"
+      : balanceUnits === null
+        ? "读取中…"
+        : null;
+
   return (
     <GlassPanel
       glow="none"
@@ -67,9 +89,16 @@ export function AgentPane({
 
       <div className="mt-6 flex flex-1 flex-col gap-6">
         <Field label="钱包地址">
-          <span className="font-mono text-sm text-white/85">
-            {shortenAddress(address)}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm text-white/85">
+              {shortenAddress(address)}
+            </span>
+            {!addressConfigured ? (
+              <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/45 ring-1 ring-white/10">
+                待配置
+              </span>
+            ) : null}
+          </div>
         </Field>
 
         <div className="space-y-1.5">
@@ -77,23 +106,46 @@ export function AgentPane({
             可用余额
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-4xl font-semibold tracking-tight text-white">
-              {formatUsdc(balance)}
+            <span
+              className={
+                balanceUnits !== null
+                  ? "font-mono text-4xl font-semibold tracking-tight text-white"
+                  : "font-mono text-4xl font-semibold tracking-tight text-white/25"
+              }
+            >
+              {balanceUnits !== null ? formatUsdc(balanceUnits) : "—"}
             </span>
             <span className="text-xs text-white/40">USDC</span>
           </div>
+          {balanceNote ? (
+            <p className="text-xs text-white/40">{balanceNote}</p>
+          ) : null}
         </div>
 
         <div className="space-y-2.5">
           <div className="flex items-center justify-between text-xs">
             <span className="uppercase tracking-[0.16em] text-white/40">
-              预算用量
+              余额消耗
             </span>
             <span className="font-mono text-white/70">
-              {formatUsdc(spent)} / {formatUsdc(total)}
+              {total !== null ? (
+                <>
+                  {formatUsdc(spent)} / {formatUsdc(total)}
+                </>
+              ) : (
+                <span className="text-white/40">—</span>
+              )}
             </span>
           </div>
           <Progress value={usedPct} tone="cyan" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Metric label="单次价格" value={recipePriceUnits ? formatUsdc(recipePriceUnits) : "—"} />
+          <Metric
+            label="可调用"
+            value={`${callsRemaining(balanceUnits, recipePriceUnits)} 次`}
+          />
         </div>
 
         <Separator />
@@ -116,6 +168,17 @@ export function AgentPane({
         </div>
       </div>
     </GlassPanel>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-white/[0.03] px-3 py-2 ring-1 ring-white/[0.07]">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-sm text-white/80">{value}</div>
+    </div>
   );
 }
 

@@ -10,7 +10,8 @@ import { LiveDemo } from "@/components/sections/LiveDemo";
  *   <Hero/>     — first surface (id="top")
  *   <LiveDemo/> — second surface (id="demo")
  *
- * Hero and LiveDemo are stubs for now; later stages fill them in.
+ * The live demo surface subscribes to backend settlement events and balance
+ * reads; when no live data is present it renders honest empty states.
  */
 export default function Page() {
   return (

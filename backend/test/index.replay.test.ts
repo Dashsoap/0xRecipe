@@ -79,9 +79,11 @@ describe("POST /v1/chat/completions — voucher replay guard", () => {
     const voucher: PaymentVoucher = {
       agent: ACCOUNT.address,
       recipeId: "legal-reviewer-v1",
-      maxPrice: 50_000n, // >= recipe price (0.05 USDC = 50000 base units)
+      maxPrice: 1_000_000n, // >= recipe price (1.00 USDC = 1000000 base units)
       nonce: 424242n,
-      expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
+      // The route caps expiry-now at MAX_VOUCHER_WINDOW_SEC = 120, so keep
+      // the voucher's lifetime well inside that window.
+      expiry: BigInt(Math.floor(Date.now() / 1000) + 60),
     };
     const header = await buildHeader(voucher);
 

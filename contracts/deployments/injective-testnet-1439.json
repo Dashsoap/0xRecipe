@@ -2,13 +2,13 @@
   "chainId": 1439,
   "rpc": "https://1439.rpc.thirdweb.com",
   "usdc": "0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d",
-  "fusionSplitter": "0xec8f98a04b7c77050d81d70f3776e30fc0616b61",
-  "agentEscrow": "0xa7e38978d2a725fcc442a24dc9e155de15a81743",
+  "fusionSplitter": "0x21e44c98ae0a275fc4215c57bd66668386ed29d2",
+  "agentEscrow": "0xdfc4a81cf2e3008b86939003ac984a0660aa4af6",
   "backend": "0xF615D233EDff07f48ce7a23863Ccd819051bccff",
   "platform": "0xB48a902817E9f9a15c5bad33751033Ad30F000A3",
   "creator": "0x31EF222895Ac2cb5553EE93A510738d67D73B9B1",
   "tx": {
-    "splitter": "0x3ce6394c6ea1a366507f11b95e096f849b3d09d4bbfbf2af28f059e15f612b79",
-    "escrow": "0x8039afdfc8967474ecfc0fa00acdc4ccdd3ba66b89a9a647c785772ba98fbcf4"
+    "splitter": "0xdbb7efee1d4615b7ac2e07f41c2e0c69b45e6ff225d5c7c9af7d85075724c8fa",
+    "escrow": "0x8fc303c480026a792ed8608f86d69bbea9f41fe87a99f7b0fe83db2a142ee82f"
   }
 }

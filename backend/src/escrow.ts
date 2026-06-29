@@ -18,12 +18,13 @@ import {
   createWalletClient,
   http,
   getAddress,
+  type Account,
   type Address,
   type Hex,
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import { injectiveTestnet } from "@0xrecipe/x402";
 import { config, requireEnv } from "./config.js";
 
@@ -69,6 +70,23 @@ export const AGENT_ESCROW_ABI = [
 ] as const;
 
 let publicClientSingleton: PublicClient | undefined;
+let mockTxCounter = 1n;
+
+function nextMockTxHash(): Hex {
+  const n = mockTxCounter++;
+  return `0x${n.toString(16).padStart(64, "0")}` as Hex;
+}
+
+function parseMockUsdcAmount(decimal: string): bigint {
+  if (!/^\d+(\.\d{1,6})?$/.test(decimal)) {
+    throw new Error(
+      `Invalid MOCK_AGENT_BALANCE_USDC="${decimal}": expected a non-negative ` +
+        `decimal with at most 6 fractional digits.`,
+    );
+  }
+  const [whole = "0", frac = ""] = decimal.split(".");
+  return BigInt(whole) * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
+}
 
 /** Lazily build the read-only RPC client. */
 export function getPublicClient(): PublicClient {
@@ -83,18 +101,39 @@ export function getPublicClient(): PublicClient {
 
 interface BackendWallet {
   walletClient: WalletClient;
-  account: ReturnType<typeof privateKeyToAccount>;
+  account: Account;
 }
 
 let backendWalletSingleton: BackendWallet | undefined;
 
-/** Lazily build the backend signer; fail fast if the key is missing. */
+/**
+ * Resolve the backend signing account. Prefers an explicit BACKEND_PRIVATE_KEY;
+ * if that is unset, derives address index 0 from MNEMONIC (the deployed
+ * `onlyBackend` signer). One funded seed can back the relayer/charge signer
+ * without copying a raw private key into a second variable. Fails fast with a
+ * clear error if neither is set — never a fabricated key.
+ */
+function resolveBackendAccount(): Account {
+  if (config.backendPrivateKey) {
+    const raw = config.backendPrivateKey;
+    const pk = (raw.startsWith("0x") ? raw : `0x${raw}`) as Hex;
+    return privateKeyToAccount(pk);
+  }
+  if (config.mnemonic) {
+    return mnemonicToAccount(config.mnemonic, { addressIndex: 0 });
+  }
+  // Surface the same shape of error requireEnv produces so callers can map it.
+  throw new Error(
+    "Missing required environment variable(s): BACKEND_PRIVATE_KEY or MNEMONIC. " +
+      "Set one in your environment (see backend/.env.example). " +
+      "Secrets are never bundled — the service refuses to run with fake values.",
+  );
+}
+
+/** Lazily build the backend signer; fail fast if no signing source is set. */
 function getBackendWallet(): BackendWallet {
   if (!backendWalletSingleton) {
-    requireEnv(["backendPrivateKey"]);
-    const raw = config.backendPrivateKey as string;
-    const pk = (raw.startsWith("0x") ? raw : `0x${raw}`) as Hex;
-    const account = privateKeyToAccount(pk);
+    const account = resolveBackendAccount();
     const walletClient = createWalletClient({
       account,
       chain: injectiveTestnet,
@@ -116,6 +155,9 @@ function escrowAddress(): Address {
  * Needs only RPC_URL + AGENT_ESCROW_ADDRESS.
  */
 export async function readBalance(agent: Address): Promise<bigint> {
+  if (config.mockChain) {
+    return parseMockUsdcAmount(config.mockAgentBalanceUsdc);
+  }
   const address = escrowAddress();
   const client = getPublicClient();
   return client.readContract({
@@ -150,6 +192,9 @@ const DEPOSIT_RECEIPT_TIMEOUT_MS = 60_000;
  * broadcast) and the caller can read an accurate post-deposit balance.
  */
 export async function relayDeposit(params: RelayDepositParams): Promise<Hex> {
+  if (config.mockChain) {
+    return nextMockTxHash();
+  }
   const address = escrowAddress();
   const { walletClient, account } = getBackendWallet();
   const hash = await walletClient.writeContract({
@@ -199,6 +244,9 @@ export async function charge(
   amount: bigint,
   creator: Address,
 ): Promise<Hex> {
+  if (config.mockChain) {
+    return nextMockTxHash();
+  }
   const address = escrowAddress();
   const { walletClient, account } = getBackendWallet();
   const hash = await walletClient.writeContract({

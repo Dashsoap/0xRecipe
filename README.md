@@ -48,7 +48,12 @@ pnpm test:contracts                                  # 或 forge test --root con
 pnpm --filter @0xrecipe/backend run typecheck
 NODE_ENV=test pnpm --filter @0xrecipe/backend run test
 
-# 開發伺服器（後端需先填 backend/.env，見 backend/.env.example）
+# Demo 前檢查 / 故障排除
+pnpm doctor            # 檢查 env、部署合約、signer、recipe、agent escrow balance
+pnpm e2e:dry-run       # 驗證 Fusion 失敗時不扣款、不發 settlement
+pnpm gateway:smoke     # 填好 LLM key 後先測 OpenAI-compatible gateway
+
+# 開發伺服器（後端需先填 repo-root .env，可由 .example.env 複製）
 pnpm dev:backend
 pnpm dev:web
 ```
@@ -62,6 +67,7 @@ pnpm dev:web
 | `POST /v1/chat/completions` | 付費 Fusion 調用（帶簽名付款憑證） |
 | `GET  /v1/balance/:agent` | 查鏈上預付餘額 |
 | `GET  /v1/usage/:agent` | 查帳單（充值 + 已結算扣費，新到舊） |
+| `GET  /v1/recipes` | 查目前配方、價格與 panel size |
 | `GET  /v1/deposit/info` | 取得簽署預付授權所需參數 |
 | `POST /v1/deposit` | 提交簽好的 gasless 預付，relay 進 escrow |
 | `GET  /events/stream` | 結算事件 SSE 串流 |

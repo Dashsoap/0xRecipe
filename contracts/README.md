@@ -48,9 +48,12 @@ Tests live in `test/`. `MockUSDC.sol` is a 6-decimal USDC stand-in with a real E
 
 - Solidity `0.8.28`, `evm_version=cancun`, optimizer on (200 runs). See `foundry.toml`.
 
-## Deploy (prerequisites — not run at this stage)
+## Deploy
 
-Deployment is intentionally deferred. When ready:
+The current Injective EVM testnet deployment is recorded in
+`deployments/injective-testnet-1439.json`.
+
+To redeploy:
 
 1. Provide environment variables (never commit secrets):
    - `PRIVATE_KEY` — deployer key
@@ -62,6 +65,7 @@ Deployment is intentionally deferred. When ready:
    ```bash
    forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast
    ```
-3. Record the deployed `AgentEscrow` and `FusionPayoutSplitter` addresses into the backend environment.
+3. Record the deployed `AgentEscrow` and `FusionPayoutSplitter` addresses into
+   `deployments/injective-testnet-1439.json` and the backend environment.
 
 `script/Deploy.s.sol` reads all addresses from the environment and hardcodes no keys or real addresses.

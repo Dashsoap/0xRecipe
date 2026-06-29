@@ -66,8 +66,13 @@ export interface RecipeRow {
 const PLACEHOLDER_CREATOR_ADDRESS =
   "0x000000000000000000000000000000000000dEaD";
 
-/** Decimal-string price used only to seed a fresh DB; overridable later. */
-const DEFAULT_PRICE_USDC = "0.05";
+/**
+ * Decimal-string price used only to seed a fresh DB; overridable at runtime via
+ * recipe-admin without a restart. $1.00 is the D6-justified price: measured
+ * upstream cost is ~$0.39 per fusion call (panel + judge through the gateway),
+ * and price must be >= 2x cost (here ~2.6x). See backend/scripts/measure-cost.ts.
+ */
+const DEFAULT_PRICE_USDC = "1.00";
 
 /** Stable id of the demo recipe seeded on a fresh database. */
 export const SEED_RECIPE_ID = "legal-reviewer-v1";
@@ -100,13 +105,16 @@ const SEED_JUDGE: JudgeSpec = {
   model: "gpt-5.5",
   channel: "standard",
   instruction:
-    "You are given several independent reviews of the same contract, each written " +
-    "from a different perspective. Synthesize them into a single structured result. " +
-    "Identify points the reviewers agree on, direct contradictions between clauses " +
-    "or between reviewers, areas only partially covered, unique insights raised by a " +
-    "single reviewer, and blind spots none of them addressed. Then write one clear, " +
-    "actionable summary for the reader. Ground every point in the contract text; do " +
-    "not add facts that are not supported by the reviews or the document.",
+    "You are given several independent expert reviews of the same contract. Produce " +
+    "one consolidated structured result that is strictly better than any single " +
+    "review. For `contradictions`: take the UNION — list EVERY distinct clause-level " +
+    "conflict raised by ANY reviewer that is genuinely supported by the contract " +
+    "text. Merge duplicates that describe the same conflict, but NEVER drop a real " +
+    "conflict just because only one reviewer raised it. At the same time, EXCLUDE any " +
+    "asserted conflict the document does not actually support (filter out a single " +
+    "reviewer's false positives). Then fill consensus, partial_coverage, " +
+    "unique_insights, blind_spots, and a clear, actionable synthesized_answer. Ground " +
+    "every point in the contract text; never invent facts.",
 };
 
 // --- Connection + schema (run once on module init) ---------------------------
@@ -125,7 +133,19 @@ function openDatabase(): Database.Database {
   return database;
 }
 
-const db = openDatabase();
+/**
+ * Shared SQLite handle. Exported so other modules (e.g. the nonce replay guard)
+ * can persist to the SAME database without opening a second connection, which
+ * better-sqlite3 would let do — but a second handle on the same on-disk file
+ * complicates WAL semantics, and on `:memory:` (test runs) it would create an
+ * unrelated DB. One handle, one schema, all migrations in this file.
+ *
+ * Explicit `Database.Database` annotation: better-sqlite3's default-exported
+ * type name (`BetterSqlite3.Database`) cannot be reproduced by tsc when
+ * emitting declarations, so without this annotation the compiler refuses to
+ * infer a public type for the export (TS4023).
+ */
+export const db: Database.Database = openDatabase();
 
 // Idempotent: safe to run on every boot. Keep this CREATE in sync with the
 // identical statement in backend/scripts/recipe-admin.mjs.

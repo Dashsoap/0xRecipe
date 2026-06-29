@@ -13,11 +13,11 @@ describe("recipe store (SQLite-backed, in-memory under test)", () => {
     expect(listRecipes().some((r) => r.id === "legal-reviewer-v1")).toBe(true);
   });
 
-  it("getRecipe returns the seed with priceUnits===50000n for the default 0.05", () => {
+  it("getRecipe returns the seed with priceUnits===1000000n for the default 1.00", () => {
     const recipe = getRecipe("legal-reviewer-v1");
     expect(recipe).toBeDefined();
-    expect(recipe?.pricePerCallUsdc).toBe("0.05");
-    expect(recipe?.priceUnits).toBe(50_000n);
+    expect(recipe?.pricePerCallUsdc).toBe("1.00");
+    expect(recipe?.priceUnits).toBe(1_000_000n);
     // Panel/judge survive the JSON round-trip intact.
     expect(recipe?.panel).toHaveLength(2);
     expect(recipe?.judge.instruction.length).toBeGreaterThan(0);

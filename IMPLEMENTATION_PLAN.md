@@ -217,5 +217,7 @@ VOUCHER_DOMAIN          = <EIP-712 domain for per-call voucher>
 
 **本文件随进度更新 `Status`。**
 ```
-状态:Stage 1 ✅ 完成(合约+测试+脚手架,forge test 8/8) / Stage 2 🚧 进行中(✅ 合约部署 testnet 1439 + R1 链上验证 + .env 配置;分账已定 创作者 20% / 平台 80%;待 重部署 20/80 合约 + 后端接真网关 + curl 端到端) / Stage 3 未开始 / Stage 4 未开始
+状态:Stage 1 ✅ 完成(合约+测试+脚手架,forge test 8/8) / Stage 2 ✅ 完成(20/80 合约部署 testnet 1439 + R1 链上验证;后端接真网关跑通;**curl 端到端 5/5 链上验证**:voucher→solvency→Fusion→charge 原子 20/80→SSE;矛盾夹具 1500 字/6 矛盾,5/5 稳定检出已冻结;成本核算 D6 实测网关真账 ~$0.39/次 → 定价 $1.00=2.6×;前端三栏接真 SSE,typecheck+build 绿) / Stage 3 ✅ 完成(自治 agent 链上联调通过:预付一次→每调签 voucher→多步评审→第 3 次撞 403 预算墙 LLM 推理停;gateway 跨渠道 system-400 自愈;前端补 CORS 后浏览器可连)/ Stage 4 未开始
+
+> Stage 2 验证产物:`backend/scripts/e2e-http.ts`(端到端 5/5)、`backend/scripts/measure-cost.ts`(成本核算)、`backend/test/fixtures/lease.ts`(矛盾夹具)。Stage 3:`backend/scripts/legal-reviewer-agent.ts`(自治 agent)、`backend/scripts/setup-budget-wall.ts`(预算墙布置)。
 ```
