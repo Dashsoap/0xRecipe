@@ -154,7 +154,9 @@ async function callOnce(i: number): Promise<{
   sample: string[];
 }> {
   const nonce = BigInt("0x" + randomBytes(8).toString("hex"));
-  const expiry = BigInt(Math.floor(Date.now() / 1000) + 300);
+  // Server caps voucher windows at 120s; keep this comfortably below that so
+  // the e2e exercises the real hot path instead of failing auth.
+  const expiry = BigInt(Math.floor(Date.now() / 1000) + 90);
   const maxPrice = 1_000_000n; // 1 USDC ceiling, well above the recipe price
   const sig = await signVoucher(nonce, expiry, maxPrice);
   const header = voucherHeader(nonce, expiry, maxPrice, sig);

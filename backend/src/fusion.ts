@@ -24,6 +24,7 @@
 
 import { type FusionResult } from "@0xrecipe/shared";
 import { callModel, labelForChannel } from "./gateway.js";
+import { config } from "./config.js";
 import type { Recipe } from "./recipes.js";
 
 /** The judge's structured comparison — every FusionResult field except the prose answer. */
@@ -194,6 +195,28 @@ async function runSynthesizer(
  * output cannot be parsed after one hardened retry. Never returns fabricated data.
  */
 export async function runFusion(recipe: Recipe, userMessage: string): Promise<FusionResult> {
+  if (config.mockFusion) {
+    return {
+      consensus:
+        "Mock Fusion review: the agreement should be treated as internally inconsistent until the conflicting clauses are clarified in writing.",
+      contradictions: [
+        "Mock contradiction: one clause states the deposit is refundable, while another describes it as non-refundable.",
+        "Mock contradiction: one clause allows early termination with notice, while another imposes a penalty regardless of notice.",
+      ],
+      partial_coverage: [
+        "Mock review covers payment, deposit, termination, and penalty terms only.",
+      ],
+      unique_insights: [
+        "Mock insight: ask which clause controls before relying on the agreement operationally.",
+      ],
+      blind_spots: [
+        "Mock mode does not perform jurisdiction-specific legal analysis.",
+      ],
+      synthesized_answer:
+        "This is a mock Fusion result for local demo mode. The contract appears to contain conflicting deposit and termination terms. Before signing or enforcing it, clarify which clauses control and update the document so the payment, refund, and penalty obligations are unambiguous.",
+    };
+  }
+
   // Stage 1 — panel, with per-member failure isolation.
   const settled = await Promise.allSettled(
     recipe.panel.map((member) => runPanelMember(member, userMessage)),

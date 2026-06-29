@@ -29,7 +29,7 @@ import {
 } from "@0xrecipe/x402";
 import type { FusionResult, SettlementEvent } from "@0xrecipe/shared";
 import { config } from "./config.js";
-import { getRecipe } from "./recipes.js";
+import { getRecipe, listRecipes } from "./recipes.js";
 import { runFusion } from "./fusion.js";
 import { reserve, release } from "./solvency.js";
 import { charge, readBalance, relayDeposit } from "./escrow.js";
@@ -149,13 +149,30 @@ app.get("/health", (c) => {
   return c.json({
     status: "ok",
     chainId: config.chainId,
-    configured: {
-      escrow: Boolean(config.agentEscrowAddress),
-      splitter: Boolean(config.fusionSplitterAddress),
-      backendWallet: Boolean(config.backendPrivateKey || config.mnemonic),
-      standardSource: Boolean(config.llmGatewayKey),
-      officialSource: Boolean(config.llmGatewayKeyPure),
+    mock: {
+      chain: config.mockChain,
+      fusion: config.mockFusion,
     },
+    configured: {
+      escrow: config.mockChain || Boolean(config.agentEscrowAddress),
+      splitter: config.mockChain || Boolean(config.fusionSplitterAddress),
+      backendWallet:
+        config.mockChain || Boolean(config.backendPrivateKey || config.mnemonic),
+      standardSource: config.mockFusion || Boolean(config.llmGatewayKey),
+      officialSource: config.mockFusion || Boolean(config.llmGatewayKeyPure),
+    },
+  });
+});
+
+app.get("/v1/recipes", (c) => {
+  return c.json({
+    recipes: listRecipes().map((recipe) => ({
+      id: recipe.id,
+      name: recipe.name,
+      pricePerCall: recipe.pricePerCallUsdc,
+      priceUnits: recipe.priceUnits.toString(),
+      panelSize: recipe.panel.length,
+    })),
   });
 });
 
@@ -234,7 +251,9 @@ app.get("/v1/usage/:agent", (c) => {
  * hand back a placeholder contract address.
  */
 app.get("/v1/deposit/info", (c) => {
-  const escrowAddress = config.agentEscrowAddress;
+  const escrowAddress =
+    config.agentEscrowAddress ??
+    (config.mockChain ? "0x0000000000000000000000000000000000000402" : undefined);
   if (!escrowAddress) {
     return c.json(
       {

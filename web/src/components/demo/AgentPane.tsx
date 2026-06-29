@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Beam } from "@/components/visuals/Beam";
 import { explorerTxUrl } from "@/lib/chain";
 import {
+  callsRemaining,
   formatUsdc,
   shortenAddress,
   shortenHash,
@@ -31,6 +32,8 @@ export interface AgentPaneProps {
   spent: string;
   /** Spent + remaining, USDC base units, or null when balance is unknown. */
   total: string | null;
+  /** Current recipe price, USDC base units, or null while unknown. */
+  recipePriceUnits: string | null;
   recentCalls: CallRecord[];
 }
 
@@ -53,6 +56,7 @@ export function AgentPane({
   usedPct,
   spent,
   total,
+  recipePriceUnits,
   recentCalls,
 }: AgentPaneProps) {
   const balanceNote = !addressConfigured
@@ -136,6 +140,14 @@ export function AgentPane({
           <Progress value={usedPct} tone="cyan" />
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <Metric label="单次价格" value={recipePriceUnits ? formatUsdc(recipePriceUnits) : "—"} />
+          <Metric
+            label="可调用"
+            value={`${callsRemaining(balanceUnits, recipePriceUnits)} 次`}
+          />
+        </div>
+
         <Separator />
 
         <div className="flex flex-1 flex-col gap-3">
@@ -156,6 +168,17 @@ export function AgentPane({
         </div>
       </div>
     </GlassPanel>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-white/[0.03] px-3 py-2 ring-1 ring-white/[0.07]">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-sm text-white/80">{value}</div>
+    </div>
   );
 }
 

@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Reveal } from "@/components/visuals/Reveal";
 import { useEventStream, type CallRecord } from "@/hooks/useEventStream";
 import { useAgentBalance } from "@/hooks/useAgentBalance";
+import { useBackendHealth, type BackendHealth } from "@/hooks/useBackendHealth";
+import { useRecipes } from "@/hooks/useRecipes";
 import { AgentPane } from "@/components/demo/AgentPane";
 import { CreatorPane } from "@/components/demo/CreatorPane";
 import { ExplorerPane } from "@/components/demo/ExplorerPane";
@@ -25,6 +27,9 @@ import { creatorShareUnits, sumUnits } from "@/lib/format";
  */
 export function LiveDemo() {
   const { settlements, status } = useEventStream();
+  const { health, status: healthStatus } = useBackendHealth();
+  const { recipes } = useRecipes();
+  const recipe = recipes.find((r) => r.id === "legal-reviewer-v1") ?? recipes[0] ?? null;
 
   const agentAddress = DEMO_AGENT;
   const agentBalance = useAgentBalance(
@@ -102,6 +107,10 @@ export function LiveDemo() {
         </div>
       </Reveal>
 
+      <Reveal delay={0.03}>
+        <HealthStrip health={health} status={healthStatus} />
+      </Reveal>
+
       <div className="mt-14 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Reveal delay={0.05} className="h-full">
           <AgentPane
@@ -112,6 +121,7 @@ export function LiveDemo() {
             usedPct={usedPct}
             spent={spentUnits}
             total={totalUnits}
+            recipePriceUnits={recipe?.priceUnits ?? null}
             recentCalls={recentCalls}
           />
         </Reveal>
@@ -131,6 +141,57 @@ export function LiveDemo() {
         </Reveal>
       </div>
     </section>
+  );
+}
+
+function HealthStrip({
+  health,
+  status,
+}: {
+  health: BackendHealth | null;
+  status: "loading" | "ready" | "error";
+}) {
+  const items = health
+    ? [
+        ["链上托管", health.configured.escrow && health.configured.splitter],
+        ["签名钱包", health.configured.backendWallet],
+        ["标准源", health.configured.standardSource],
+        ["官方源", health.configured.officialSource],
+        ["Mock", !(health.mock.chain || health.mock.fusion)],
+      ] as const
+    : [];
+
+  return (
+    <div className="mt-8 flex flex-wrap items-center gap-2 rounded-2xl bg-white/[0.03] px-3 py-3 ring-1 ring-white/10">
+      {status === "loading" ? (
+        <span className="text-sm text-white/45">正在读取后端状态…</span>
+      ) : status === "error" || !health ? (
+        <StatusPill label="后端状态" ok={false} />
+      ) : (
+        <>
+          <span className="mr-1 font-mono text-xs text-white/45">
+            chain {health.chainId}
+          </span>
+          {items.map(([label, ok]) => (
+            <StatusPill key={label} label={label} ok={ok} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusPill({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <span
+      className={
+        ok
+          ? "rounded-full bg-emerald/10 px-2.5 py-1 text-xs text-emerald ring-1 ring-emerald/25"
+          : "rounded-full bg-red-500/10 px-2.5 py-1 text-xs text-red-300 ring-1 ring-red-400/25"
+      }
+    >
+      {label}
+    </span>
   );
 }
 

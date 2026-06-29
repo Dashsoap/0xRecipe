@@ -57,6 +57,8 @@ export interface RecipeSummary {
   name: string;
   /** Price per call as a decimal string to preserve precision. */
   pricePerCall: string;
+  /** Price per call in USDC base units (6 decimals), as a decimal string. */
+  priceUnits: string;
   /** Number of panel models in this recipe. */
   panelSize: number;
 }

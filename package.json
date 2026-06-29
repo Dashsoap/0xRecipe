@@ -12,6 +12,9 @@
     "build": "pnpm -r build",
     "dev:backend": "pnpm --filter @0xrecipe/backend dev",
     "dev:web": "pnpm --filter @0xrecipe/web dev",
+    "doctor": "cd backend && node --env-file=../.env scripts/doctor.mjs",
+    "e2e:dry-run": "cd backend && node --env-file=../.env --import tsx scripts/e2e-dry-run.ts",
+    "gateway:smoke": "cd backend && node --env-file=../.env scripts/gateway-smoke.mjs",
     "test:contracts": "cd contracts && forge test -vvv"
   }
 }

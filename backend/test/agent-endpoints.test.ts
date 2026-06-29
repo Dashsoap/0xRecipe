@@ -222,4 +222,18 @@ describe("agent self-serve endpoints", () => {
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("invalid_agent");
   });
+
+  it("GET /v1/recipes lists the seeded recipe with price units", async () => {
+    const res = await app.fetch(new Request("http://localhost/v1/recipes"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      recipes: Array<{ id: string; pricePerCall: string; priceUnits: string; panelSize: number }>;
+    };
+    expect(body.recipes[0]).toMatchObject({
+      id: "legal-reviewer-v1",
+      pricePerCall: "1.00",
+      priceUnits: "1000000",
+      panelSize: 2,
+    });
+  });
 });

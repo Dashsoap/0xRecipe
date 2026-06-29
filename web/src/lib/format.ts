@@ -29,6 +29,17 @@ export function sumUnits(values: string[]): string {
   return total.toString();
 }
 
+export function callsRemaining(balanceUnits: string | null, priceUnits: string | null): string {
+  if (!balanceUnits || !priceUnits) return "—";
+  try {
+    const price = BigInt(priceUnits);
+    if (price <= 0n) return "—";
+    return (BigInt(balanceUnits) / price).toString();
+  } catch {
+    return "—";
+  }
+}
+
 /**
  * Format a USDC base-unit string (6 decimals) as a human dollar amount.
  * e.g. "50000" -> "$0.05". Avoids floating point on the integer part.

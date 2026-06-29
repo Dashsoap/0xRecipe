@@ -70,6 +70,23 @@ export const AGENT_ESCROW_ABI = [
 ] as const;
 
 let publicClientSingleton: PublicClient | undefined;
+let mockTxCounter = 1n;
+
+function nextMockTxHash(): Hex {
+  const n = mockTxCounter++;
+  return `0x${n.toString(16).padStart(64, "0")}` as Hex;
+}
+
+function parseMockUsdcAmount(decimal: string): bigint {
+  if (!/^\d+(\.\d{1,6})?$/.test(decimal)) {
+    throw new Error(
+      `Invalid MOCK_AGENT_BALANCE_USDC="${decimal}": expected a non-negative ` +
+        `decimal with at most 6 fractional digits.`,
+    );
+  }
+  const [whole = "0", frac = ""] = decimal.split(".");
+  return BigInt(whole) * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
+}
 
 /** Lazily build the read-only RPC client. */
 export function getPublicClient(): PublicClient {
@@ -138,6 +155,9 @@ function escrowAddress(): Address {
  * Needs only RPC_URL + AGENT_ESCROW_ADDRESS.
  */
 export async function readBalance(agent: Address): Promise<bigint> {
+  if (config.mockChain) {
+    return parseMockUsdcAmount(config.mockAgentBalanceUsdc);
+  }
   const address = escrowAddress();
   const client = getPublicClient();
   return client.readContract({
@@ -172,6 +192,9 @@ const DEPOSIT_RECEIPT_TIMEOUT_MS = 60_000;
  * broadcast) and the caller can read an accurate post-deposit balance.
  */
 export async function relayDeposit(params: RelayDepositParams): Promise<Hex> {
+  if (config.mockChain) {
+    return nextMockTxHash();
+  }
   const address = escrowAddress();
   const { walletClient, account } = getBackendWallet();
   const hash = await walletClient.writeContract({
@@ -221,6 +244,9 @@ export async function charge(
   amount: bigint,
   creator: Address,
 ): Promise<Hex> {
+  if (config.mockChain) {
+    return nextMockTxHash();
+  }
   const address = escrowAddress();
   const { walletClient, account } = getBackendWallet();
   const hash = await walletClient.writeContract({

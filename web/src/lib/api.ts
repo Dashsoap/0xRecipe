@@ -34,3 +34,11 @@ export const DEMO_AGENT = RAW_DEMO_AGENT ?? PLACEHOLDER_AGENT;
 export function balanceUrl(agent: string): string {
   return `${API_BASE}/v1/balance/${agent}`;
 }
+
+export function healthUrl(): string {
+  return `${API_BASE}/health`;
+}
+
+export function recipesUrl(): string {
+  return `${API_BASE}/v1/recipes`;
+}

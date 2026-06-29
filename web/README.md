@@ -2,7 +2,8 @@
 
 0xRecipe 演示前端：一页三栏的实时看板，展示 agent 预付调用、链上原子分账、创作者即时收入。
 
-> 当前是**假数据脚手架**：页面用占位数据（明显的演示地址 / 金额）驱动，尚未连接后端事件流。地址与金额仅用于演示，不代表任何真实业务。
+页面已连接后端事件流与余额 API。没有真实 settlement 事件或 demo agent
+地址时，界面显示明确的等待/待配置状态，不渲染假交易或假余额。
 
 ## 启动
 
@@ -22,24 +23,33 @@ pnpm lint       # 代码检查
 |---|---|
 | **Agent 视角** | 钱包地址、可用余额、预算用量条、最近调用列表（点击交易可跳转链上浏览器） |
 | **Creator 视角** | 收款地址、累计收入、本次分账高亮卡片 |
-| **链上浏览器** | 结算交易的内嵌视图（当前为占位，后续指向链上交易页） |
+| **链上浏览器** | 实时 settlement feed，交易哈希可跳转 Injective testnet explorer |
+
+页面顶部还会显示后端健康状态，包括 escrow/splitter、backend signer、标准源、
+官方源与 mock 开关。Agent 视角会根据 `/v1/recipes` 的当前价格显示余额还能
+调用几次。
 
 ## 数据来源
 
-页面数据来自 `src/hooks/useEventStream.ts`。
+页面数据来自：
 
-- 现在：返回演示占位数据，`isDemo` 为 `true`，页面右上角标注「演示数据 · 占位」。
-- 后续：订阅后端事件流（`NEXT_PUBLIC_EVENTS_URL`），收到结算事件后实时更新余额、调用列表与创作者收入。接线点已在 hook 内以注释标出。
+- `src/hooks/useEventStream.ts`：订阅后端 `GET /events/stream`，收到
+  settlement 后实时更新调用列表、创作者收入与 explorer feed。
+- `src/hooks/useAgentBalance.ts`：读取 `GET /v1/balance/:agent`，并在每次
+  settlement 后刷新 demo agent 的 escrow 余额。
+- `src/hooks/useBackendHealth.ts`：读取 `GET /health`，展示当前依赖状态。
+- `src/hooks/useRecipes.ts`：读取 `GET /v1/recipes`，展示当前价格与可调用次数。
 
 ## 配置
 
-仅使用 `NEXT_PUBLIC_*` 公开、非敏感配置（公共 RPC / 浏览器地址 / 事件流地址）。**不读取 `.env` 内容，不写死任何密钥或私钥。** 缺省时回退到公共测试网端点：
+仅使用 `NEXT_PUBLIC_*` 公开、非敏感配置。**不读取任何密钥或私钥。**
+缺省时连接本地后端：
 
 | 变量 | 用途 | 缺省 |
 |---|---|---|
-| `NEXT_PUBLIC_RPC_URL` | 链上 RPC | 公共测试网 RPC |
-| `NEXT_PUBLIC_EXPLORER_URL` | 链上浏览器地址 | 公共测试网浏览器 |
-| `NEXT_PUBLIC_EVENTS_URL` | 后端事件流地址（后续接入） | — |
+| `NEXT_PUBLIC_API_BASE` | 后端 HTTP base，用于 balance/usage reads | `http://localhost:3001` |
+| `NEXT_PUBLIC_EVENTS_URL` | 后端 SSE settlement stream | `${NEXT_PUBLIC_API_BASE}/events/stream` |
+| `NEXT_PUBLIC_DEMO_AGENT` | 前端展示并读取余额的 agent 地址 | 未配置时显示 zero placeholder |
 
 ## 技术栈
 

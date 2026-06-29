@@ -66,6 +66,14 @@ export interface Config {
    * means allow any origin — safe here because these endpoints serve only public
    * on-chain data and the paid call is authorized by a signed voucher. */
   corsOrigins: string[] | undefined;
+
+  // --- local/demo fallback ---
+  /** When true, escrow reads/writes are mocked and no RPC signer is required. */
+  mockChain: boolean;
+  /** Mock escrow balance shown to every agent, as a decimal USDC string. */
+  mockAgentBalanceUsdc: string;
+  /** When true, Fusion returns a deterministic fixture and no LLM key is required. */
+  mockFusion: boolean;
 }
 
 export const config: Config = {
@@ -90,6 +98,10 @@ export const config: Config = {
     ?.split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0),
+
+  mockChain: envOr("MOCK_CHAIN", "0") === "1",
+  mockAgentBalanceUsdc: envOr("MOCK_AGENT_BALANCE_USDC", "10.00"),
+  mockFusion: envOr("MOCK_FUSION", "0") === "1",
 };
 
 /**
@@ -116,6 +128,9 @@ export function requireEnv<K extends keyof Config>(keys: K[]): void {
     recipePriceUsdc: "RECIPE_PRICE_USDC",
     voucherDomain: "VOUCHER_DOMAIN",
     corsOrigins: "CORS_ORIGINS",
+    mockChain: "MOCK_CHAIN",
+    mockAgentBalanceUsdc: "MOCK_AGENT_BALANCE_USDC",
+    mockFusion: "MOCK_FUSION",
   };
 
   for (const key of keys) {
